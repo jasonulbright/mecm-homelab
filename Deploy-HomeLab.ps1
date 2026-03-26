@@ -964,6 +964,11 @@ Invoke-LabCommand -ComputerName $cmName -ActivityName 'Install ODBC Driver' -Scr
 }
 Write-Status "ODBC Driver $($Config.ODBCVersion) installed"
 
+# Reboot after ODBC install before MSOLEDB (pending reboots from VC++/ODBC block MSI installs)
+Write-Status 'Rebooting CM01 before MSOLEDB install...' -Level RUN
+Restart-LabVM -ComputerName $cmName -Wait
+Write-Status 'CM01 restarted'
+
 # ── 7.3 MSOLEDB ──────────────────────────────────────────────────────────────
 
 Write-Host "`n--- MSOLEDB 19 ---" -ForegroundColor White

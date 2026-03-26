@@ -1085,6 +1085,11 @@ Write-Status 'ADK WinPE add-on installed'
 
 Write-Step 'Phase 8: Install ConfigMgr 2509'
 
+# Reboot CM01 after software installs (VC++, ODBC, ADK) before CM setup
+Write-Status 'Rebooting CM01 before ConfigMgr install...' -Level RUN
+Restart-LabVM -ComputerName $cmName -Wait
+Write-Status 'CM01 restarted and ready'
+
 $cmFqdn    = "$cmName.$domainName"
 $adminUser = "$netbios\$($Config.AdminUser)"
 

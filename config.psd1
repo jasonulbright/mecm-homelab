@@ -44,6 +44,12 @@
             Desc     = 'MECM Network Access Account'
             Group    = $null  # Domain Users only — least privilege
         }
+        Admin = @{
+            Name     = 'svc-CMAdmin'
+            Password = 'P@ssw0rd!Admin1'
+            Desc     = 'MECM administration - Domain Admin, interactive logon, cc4cm'
+            Group    = 'Domain Admins'  # Also added to Remote Desktop Users
+        }
     }
     # Software versions
     ODBCVersion    = '18.5.2.1'

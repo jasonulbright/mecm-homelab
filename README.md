@@ -68,6 +68,8 @@ All scripts must be run as **Administrator**.
 #   - Boundary Group (add boundary + CM01 as site system)
 #   - Client Push Installation (enable, add svc-CMPush account)
 #   - Software Distribution > NAA (add svc-CMNAA account)
+
+# Step 8: Configure Software Update Point (see below)
 ```
 
 ## What Each Script Does
@@ -175,6 +177,53 @@ Complete these steps from the CM console on CM01:
 2. **Create a Boundary:** Administration > Hierarchy Configuration > Boundaries > Create Boundary > Type: IP Subnet > `192.168.50.0/24`
 3. **Create a Boundary Group:** Administration > Hierarchy Configuration > Boundary Groups > Create > Add the boundary above > References tab > add CM01 as site system server
 4. **Enable Client Push:** Administration > Site Configuration > Sites > right-click site > Client Installation Settings > Client Push Installation > Enable > check "Automatically install..."
+
+### Step 8: Software Update Point Setup
+
+The SUP role was installed during CM setup (script 04). WSUS is running on CM01. Configure update synchronization:
+
+1. **Open SUP Properties:** Administration > Site Configuration > Sites > right-click site > Configure Site Components > Software Update Point
+2. **Set sync source:** Synchronize from Microsoft Update
+3. **Set sync schedule:** Enable scheduled sync (e.g., every 7 days)
+
+4. **Select Products:** Administration > Site Configuration > Sites > right-click site > Configure Site Components > Software Update Point > Products tab. Start small:
+   - Windows 11
+   - Windows Server 2025
+   - Microsoft Edge
+   - Office 365 Client (if using M365)
+   - Microsoft Defender Antivirus
+
+5. **Select Classifications:**
+   - Critical Updates
+   - Security Updates
+   - Definition Updates
+   - Feature Packs (optional)
+   - Update Rollups (optional)
+
+6. **Run initial sync:** Software Library > Software Updates > All Software Updates > right-click > Synchronize Software Updates. First sync takes 15-60 minutes depending on product selection.
+
+7. **Monitor sync:** Monitoring > Software Update Point Synchronization Status. Or check `wsyncmgr.log` on CM01:
+   ```powershell
+   Get-Content 'C:\Program Files\Microsoft Configuration Manager\Logs\wsyncmgr.log' -Tail 20
+   ```
+
+> **Tip:** Keep the initial product list small. Each additional product adds significant sync time and disk usage. You can always add more products later.
+
+### Deploying Tools to CM01
+
+ApplicationPackager and Client Center are pre-installed:
+
+| Tool | Path on CM01 |
+|------|-------------|
+| Application Packager | `C:\Tools\ApplicationPackager\start-apppackager.ps1` |
+| Client Center (cc4cm) | `C:\Tools\ClientCenter\SCCMCliCtrWPF.exe` |
+
+Run as `CONTOSO\svc-CMAdmin` for full MECM access. Import the ConfigMgr module before using Application Packager:
+```powershell
+Import-Module (Join-Path $env:SMS_ADMIN_UI_PATH "..\ConfigurationManager.psd1")
+cd MCM:
+& C:\Tools\ApplicationPackager\start-apppackager.ps1
+```
 
 ### Connect to the CM Console
 

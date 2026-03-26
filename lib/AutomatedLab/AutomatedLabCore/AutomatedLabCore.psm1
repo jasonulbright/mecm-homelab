@@ -10712,12 +10712,16 @@ function Install-LabConfigurationManager
     #region MSOLEDB 19 (required by CM 2509+)
     Write-ScreenInfo -Message 'Installing MSOLEDB 19'
     $msoledbMsi = Join-Path $labSources 'SoftwarePackages/MSOLEDB/msoledbsql.msi'
-    if (-not (Test-Path $msoledbMsi)) {
-        Write-ScreenInfo -Message 'Downloading MSOLEDB 19...'
-        $msoledbMsi = (Get-LabInternetFile -Uri 'https://go.microsoft.com/fwlink/?linkid=2277846' -Path "$labSources/SoftwarePackages/MSOLEDB" -FileName 'msoledbsql.msi' -PassThru -ErrorAction Stop).FullName
+    try {
+        if (-not (Test-Path $msoledbMsi)) {
+            Write-ScreenInfo -Message 'Downloading MSOLEDB 19...'
+            $msoledbMsi = (Get-LabInternetFile -Uri 'https://go.microsoft.com/fwlink/?linkid=2277846' -Path "$labSources/SoftwarePackages/MSOLEDB" -FileName 'msoledbsql.msi' -PassThru -ErrorAction Stop).FullName
+        }
+        Install-LabSoftwarePackage -Path $msoledbMsi -ComputerName $vms -CommandLine '/qn /norestart IACCEPTMSOLEDBSQLLICENSETERMS=YES' -ExpectedReturnCodes 0, 3010, 1603
     }
-    # 1603 is non-fatal: means an older version was already installed by SQL setup; CM setup handles the upgrade from its prereqs
-    Install-LabSoftwarePackage -Path $msoledbMsi -ComputerName $vms -CommandLine '/qn /norestart IACCEPTMSOLEDBSQLLICENSETERMS=YES' -ExpectedReturnCodes 0, 3010, 1603
+    catch {
+        Write-ScreenInfo -Message "MSOLEDB install failed: $($_.Exception.Message). SQL setup installs a baseline version; CM setup handles upgrade from prereqs." -Type Warning
+    }
     #endregion
 
     #region ODBC Driver 18.5.x (required by CM 2509+, NOT 18.6.x which has NULL regression)

@@ -133,6 +133,22 @@ foreach ($mod in $moduleDirs) {
     }
 }
 
+# Remove non-essential modules that cause parse errors (Recipe, Ships)
+foreach ($removeMod in @('AutomatedLab.Recipe', 'AutomatedLab.Ships', 'AutomatedLabTest')) {
+    $removePath = Join-Path $targetPath $removeMod
+    if (Test-Path $removePath) { Remove-Item $removePath -Recurse -Force }
+}
+
+# Patch manifest to remove references to removed modules
+$manifestPath = Get-ChildItem (Join-Path $targetPath 'AutomatedLab') -Filter 'AutomatedLab.psd1' -Recurse | Select-Object -First 1
+if ($manifestPath) {
+    $content = Get-Content $manifestPath.FullName -Raw
+    $content = $content -replace ".*AutomatedLab\.Recipe.*\r?\n", ''
+    $content = $content -replace ".*AutomatedLab\.Ships.*\r?\n", ''
+    $content = $content -replace ".*AutomatedLabTest.*\r?\n", ''
+    Set-Content $manifestPath.FullName -Value $content
+}
+
 $al = Get-Module AutomatedLab -ListAvailable |
     Sort-Object Version -Descending |
     Select-Object -First 1

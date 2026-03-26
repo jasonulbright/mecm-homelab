@@ -53,11 +53,8 @@ CLRVersion = '4.0'
 # Modules that must be imported into the global environment prior to importing this module
 RequiredModules = @('AutomatedLabCore', 
                @{ModuleName = 'AutomatedLab.Common'; ModuleVersion = '2.3.37'; }, 
-               'AutomatedLab.Recipe', 
-               'AutomatedLab.Ships', 
                'AutomatedLabDefinition', 
                'AutomatedLabNotifications', 
-               'AutomatedLabTest', 
                'AutomatedLabUnattended', 
                'AutomatedLabWorker', 
                'PSLog', 

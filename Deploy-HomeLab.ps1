@@ -538,7 +538,21 @@ if (-not $labImported) {
     Write-Host "`n--- Installing Lab (this will take 30-60 minutes) ---" -ForegroundColor White
     Write-Host "  Started at: $(Get-Date -Format 'HH:mm:ss')" -ForegroundColor DarkGray
 
-    Install-Lab -DelayBetweenComputers 30 -NoValidation
+    try {
+        Install-Lab -DelayBetweenComputers 30 -NoValidation
+    }
+    catch {
+        # Install-Lab may throw non-fatal errors (e.g., SSRS config timing).
+        # Check if VMs are running — if so, continue with remaining phases.
+        $runningVMs = Get-VM -Name $Config.DC.Name, $Config.CM.Name -ErrorAction SilentlyContinue | Where-Object State -eq 'Running'
+        if ($runningVMs.Count -ge 2) {
+            Write-Status "Install-Lab reported errors but VMs are running. Continuing." -Level WARN
+            Write-Status "Error: $($_.Exception.Message)" -Level WARN
+        }
+        else {
+            throw "Install-Lab failed and VMs are not running: $($_.Exception.Message)"
+        }
+    }
 
     Write-Status 'Lab VMs deployed and domain joined'
     Write-Host "  Finished at: $(Get-Date -Format 'HH:mm:ss')" -ForegroundColor DarkGray

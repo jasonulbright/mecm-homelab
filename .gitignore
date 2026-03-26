@@ -1,0 +1,8 @@
+# Large binary files — downloaded locally, not committed
+ConfigMgr_2509/
+*.iso
+*.exe
+*.msi
+
+# AutomatedLab runtime
+*.log

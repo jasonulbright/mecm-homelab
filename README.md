@@ -34,92 +34,52 @@ Download these before starting:
 | Windows ADK (adksetup.exe) | `C:\LabSources\SoftwarePackages\ADK\` | https://go.microsoft.com/fwlink/?linkid=2289980 |
 | Windows PE add-on (adkwinpesetup.exe) | `C:\LabSources\SoftwarePackages\ADKPE\` | https://go.microsoft.com/fwlink/?linkid=2289981 |
 
-The ODBC Driver and VC++ runtimes are downloaded automatically by script 02.
+The ODBC Driver and VC++ runtimes are downloaded automatically by the deploy script.
 
 ## Quick Start
 
-All scripts must be run as **Administrator**.
+Must be run as **Administrator**. Enable Hyper-V first (reboot required), then download the ISOs and software listed above into `C:\LabSources\`.
 
 ```powershell
-# Step 1: Install Hyper-V, AutomatedLab, create folder structure
-.\01-Install-Prerequisites.ps1
-# (reboot if prompted, then run again)
-
-# Step 2: Create ADK offline layouts, download CM prereqs and runtimes
-.\02-Download-Offline.ps1
-
-# Step 3: Deploy DC01 + CM01 VMs with AD, CA, SQL
-.\03-Deploy-Infrastructure.ps1
-# (~30-60 minutes)
-
-# Step 4: Install ADK, prerequisites, and ConfigMgr 2509
-.\04-Install-ConfigMgr.ps1
-# (~1-3 hours)
-
-# Step 5: Extend AD schema, configure System Management container
-.\05-Configure-AD.ps1
-
-# Step 6: Create service accounts (client push + NAA)
-.\06-Create-ServiceAccounts.ps1
-
-# Step 7: Open the CM console on CM01 and configure:
-#   - Active Directory Forest Discovery (enable)
-#   - Boundary (IP subnet 192.168.50.0/24)
-#   - Boundary Group (add boundary + CM01 as site system)
-#   - Client Push Installation (enable, add svc-CMPush account)
-#   - Software Distribution > NAA (add svc-CMNAA account)
-
-# Step 8: Create content share on CM01 (see below)
-# Step 9: Configure Software Update Point (see below)
+# Single command deploys the entire lab (~2-4 hours)
+.\Deploy-HomeLab.ps1
 ```
 
-## What Each Script Does
+The script will:
+1. Verify prerequisites (Hyper-V, RAM, ISOs)
+2. Install AutomatedLab, create ADK offline layouts, download runtimes
+3. Deploy DC01 + CM01 VMs with AD, CA, SQL
+4. Install ADK, ODBC, VC++, and ConfigMgr 2509 on CM01
+5. Extend AD schema, create service accounts, content share
+6. Deploy tools (cc4cm + ApplicationPackager) and create snapshots
+7. Print connection info and remaining manual console steps
 
-### 01-Install-Prerequisites.ps1
+To remove an existing lab and redeploy:
+```powershell
+.\Deploy-HomeLab.ps1 -RemoveExisting
+```
 
-- Enables Hyper-V (prompts for reboot if needed)
-- Installs the AutomatedLab PowerShell module from PSGallery
-- Creates the `C:\LabSources` folder structure with subdirectories for CM, ADK, ODBC, and VC++ runtimes
-- Checks for required ISOs and shows a download checklist with URLs
-- Validates host RAM is sufficient
+## What the Script Does
 
-### 02-Download-Offline.ps1
+`Deploy-HomeLab.ps1` runs through 13 phases:
 
-- Creates ADK offline layout using `adksetup.exe /quiet /layout` (required because VMs may not have reliable internet during ADK install)
-- Creates ADK WinPE offline layout using `adkwinpesetup.exe /quiet /layout`
-- Downloads CM prerequisites using `setupdl.exe` from the CM source
-- Downloads ODBC Driver 18.5.2.1 MSI (NOT 18.6.1.1 -- see troubleshooting)
-- Downloads VC++ 14.50 x64 and x86 runtimes
-- Shows status of what is already downloaded vs. what needs downloading
-- Safe to re-run (skips items that already exist)
+| Phase | Description |
+|-------|-------------|
+| 1. Prerequisites | Checks Hyper-V, host RAM, installs vendored AutomatedLab, creates LabSources, verifies ISOs |
+| 2. Offline Downloads | Creates ADK/PE offline layouts, downloads CM prereqs, ODBC 18.5.2.1, VC++ 14.50 |
+| 3. Lab Deployment | Defines DC01 (RootDC, CaRoot, Routing) + CM01 (SQL 2022), runs `Install-Lab`, expands disk, configures SQL memory |
+| 4. Copy Software | Copies ADK, CM source, prereqs, ODBC, VC++ to CM01, flattens nested folders |
+| 5. AD Configuration | Extends AD schema (`extadsch.exe`), creates System Management container with site server permissions |
+| 6. Service Accounts | Creates svc-CMPush (Domain Admins), svc-CMNAA (Domain Users), svc-CMAdmin (Domain Admins + RDP) |
+| 7. Install Software | Installs VC++ x86/x64, ODBC, MSOLEDB, ADK, ADK WinPE on CM01 |
+| 8. Install ConfigMgr | Generates unattended INI, installs Windows features, runs CM setup, validates via WMI |
+| 9. Content Share | Creates `E:\ContentShare` with SMB share and NTFS permissions |
+| 10. MECM Admin | Adds svc-CMAdmin as MECM Full Administrator via CM PowerShell module |
+| 11. Deploy Tools | Copies cc4cm and ApplicationPackager to `C:\Tools\` on CM01 |
+| 12. Snapshots | Creates "Deployment-Complete" snapshots on both VMs |
+| 13. Summary | Prints connection info and remaining manual console steps |
 
-### 03-Deploy-Infrastructure.ps1
-
-- Creates an AutomatedLab definition with an internal Hyper-V switch
-- Defines DC01 with roles: RootDC, CaRoot, Routing (no DHCP -- see troubleshooting)
-- Defines CM01 with SQL Server 2022 role (no ConfigurationManager role -- handled manually in script 04)
-- Adds a Default Switch NIC to both VMs for internet access
-- Runs `Install-Lab` to create and configure VMs (~30-60 min)
-- Expands CM01 OS disk to 150 GB and extends the C: partition
-- Configures SQL Server memory (8 GB min/max)
-- Copies ADK layouts, CM source, prerequisites, ODBC, and VC++ runtimes to CM01
-- Flattens nested folder paths created by `Copy-LabFileItem`
-- Runs AD schema extension (`extadsch.exe`)
-- Creates "Pre-CM-Install" snapshots on both VMs
-
-### 04-Install-ConfigMgr.ps1
-
-- Imports the existing lab
-- Installs VC++ 14.50 runtimes (x86 + x64) on CM01
-- Installs ODBC Driver 18.5.2.1 on CM01
-- Installs MSOLEDB 19 from CM prerequisites
-- Installs ADK with DeploymentTools and UserStateMigrationTool features
-- Installs ADK WinPE add-on
-- Installs required Windows Server features (IIS, BITS, WSUS, .NET, etc.)
-- Generates an unattended setup INI file
-- Runs `setup.exe /SCRIPT` for unattended CM installation
-- Validates installation by checking SMS_Site WMI class, console presence, and SMS_EXECUTIVE service
-- Creates "Post-CM-Install" snapshot
+The script is idempotent -- safe to re-run if it fails partway through. Each step checks whether its work has already been done and skips if so.
 
 ## Configuration
 
@@ -135,21 +95,9 @@ Edit `config.psd1` before running the scripts to customize your lab.
 
 ## After Deployment
 
-### Step 5: Configure AD for ConfigMgr
+### Service Accounts
 
-```powershell
-.\05-Configure-AD.ps1
-```
-
-Extends the Active Directory schema for ConfigMgr (adds SMS classes) and creates the System Management container with Full Control for the CM01 computer account. This allows the site server to publish site information to AD.
-
-### Step 6: Create Service Accounts
-
-```powershell
-.\06-Create-ServiceAccounts.ps1
-```
-
-Creates the following service accounts in `OU=Service Accounts,DC=contoso,DC=com`:
+The script creates the following service accounts in `OU=Service Accounts,DC=contoso,DC=com`:
 
 | Account | Password | Purpose | Permissions |
 |---------|----------|---------|-------------|
@@ -157,7 +105,7 @@ Creates the following service accounts in `OU=Service Accounts,DC=contoso,DC=com
 | `CONTOSO\svc-CMNAA` | `P@ssw0rd!NAA1` | Network Access Account | Domain Users only (least privilege) |
 | `CONTOSO\svc-CMAdmin` | `P@ssw0rd!Admin1` | MECM admin, cc4cm, RDP | Domain Admins + Remote Desktop Users |
 
-After running the script, configure these in the MECM console:
+Configure these in the MECM console after deployment:
 
 **Client Push Account:**
 Administration > Site Configuration > Sites > right-click site > Client Installation Settings > Client Push Installation > Accounts tab > Add `CONTOSO\svc-CMPush`
@@ -166,11 +114,11 @@ Administration > Site Configuration > Sites > right-click site > Client Installa
 Administration > Site Configuration > Sites > right-click site > Configure Site Components > Software Distribution > Network Access Account tab > Add `CONTOSO\svc-CMNAA`
 
 **Admin Account (`svc-CMAdmin`):**
-Use this account to RDP into any lab VM (CM01, DC01, CLIENT01) and run tools like the CM console or Client Center (cc4cm). No console configuration needed — Domain Admins membership provides full MECM and WinRM access.
+Use this account to RDP into any lab VM (CM01, DC01, CLIENT01) and run tools like the CM console or Client Center (cc4cm). No console configuration needed -- Domain Admins membership provides full MECM and WinRM access.
 
-> **Note:** The NAA test connection may show "access denied" on C$ — this is expected. NAA only needs read access to the DP content share, not admin shares. It is intentionally least-privilege.
+> **Note:** The NAA test connection may show "access denied" on C$ -- this is expected. NAA only needs read access to the DP content share, not admin shares. It is intentionally least-privilege.
 
-### Step 7: Console Configuration
+### Console Configuration
 
 Complete these steps from the CM console on CM01:
 
@@ -179,9 +127,9 @@ Complete these steps from the CM console on CM01:
 3. **Create a Boundary Group:** Administration > Hierarchy Configuration > Boundary Groups > Create > Add the boundary above > References tab > add CM01 as site system server
 4. **Enable Client Push:** Administration > Site Configuration > Sites > right-click site > Client Installation Settings > Client Push Installation > Enable > check "Automatically install..."
 
-### Step 8: Content Share
+### Content Share
 
-A hidden share on CM01 for application content, drivers, images, and packages:
+A hidden share on CM01 for application content, drivers, images, and packages (created automatically by the deploy script):
 
 | Detail | Value |
 |--------|-------|
@@ -201,11 +149,11 @@ A hidden share on CM01 for application content, drivers, images, and packages:
     SoftwareUpdates\
 ```
 
-Created automatically by `03-Deploy-Infrastructure.ps1`. Configure ApplicationPackager to use this share: **File > Preferences > File Share Root** = `\\CM01\ContentShare$`
+Configure ApplicationPackager to use this share: **File > Preferences > File Share Root** = `\\CM01\ContentShare$`
 
-### Step 9: Software Update Point Setup
+### Software Update Point Setup
 
-The SUP role was installed during CM setup (script 04). WSUS is running on CM01. Configure update synchronization:
+The SUP role was installed during CM setup. WSUS is running on CM01. Configure update synchronization:
 
 1. **Open SUP Properties:** Administration > Site Configuration > Sites > right-click site > Configure Site Components > Software Update Point
 2. **Set sync source:** Synchronize from Microsoft Update
@@ -234,9 +182,9 @@ The SUP role was installed during CM setup (script 04). WSUS is running on CM01.
 
 > **Tip:** Keep the initial product list small. Each additional product adds significant sync time and disk usage. You can always add more products later.
 
-### Deploying Tools to CM01
+### Tools on CM01
 
-ApplicationPackager and Client Center are pre-installed:
+ApplicationPackager and Client Center are deployed automatically if found on the host:
 
 | Tool | Path on CM01 |
 |------|-------------|
@@ -280,11 +228,11 @@ Run Claude Code as Administrator and use `Enter-LabPSSession` to manage the lab 
 
 ### Hyper-V requires a reboot after enabling
 
-This is expected. Script 01 will prompt you. After rebooting, run `01-Install-Prerequisites.ps1` again to continue.
+`Deploy-HomeLab.ps1` does not enable Hyper-V automatically. Enable it manually, reboot, then run the script.
 
 ### AutomatedLab DHCP role throws "not implemented yet"
 
-The DHCP role in AutomatedLab is not implemented for all OS versions. Script 03 intentionally omits the DHCP role from DC01. If you need DHCP, configure it manually after deployment:
+The DHCP role in AutomatedLab is not implemented for all OS versions. The deploy script intentionally omits the DHCP role from DC01. If you need DHCP, configure it manually after deployment:
 
 ```powershell
 Invoke-LabCommand -ComputerName DC01 -ScriptBlock {
@@ -312,7 +260,7 @@ ODBC Driver 18.6.1.1 has a known regression that causes NULL handling issues wit
 
 ### OS disk too small / out of space on CM01
 
-The default VHDX size may not have enough space for CM + SQL + ADK + content. Script 03 expands the OS disk to 150 GB automatically. If you still run out of space, expand manually:
+The default VHDX size may not have enough space for CM + SQL + ADK + content. The deploy script expands the OS disk to 150 GB automatically. If you still run out of space, expand manually:
 
 ```powershell
 # On the host
@@ -337,7 +285,7 @@ Get-LabAvailableOperatingSystem -Path C:\LabSources\ISOs | Select-Object Operati
 
 ### Copy-LabFileItem creates nested folders
 
-When copying a folder like `C:\LabSources\SoftwarePackages\CM\ConfigMgr_2509` to `C:\Install\CM`, AutomatedLab creates `C:\Install\CM\ConfigMgr_2509\` (nested). Script 03 handles this by flattening the folder structure after copy.
+When copying a folder like `C:\LabSources\SoftwarePackages\CM\ConfigMgr_2509` to `C:\Install\CM`, AutomatedLab creates `C:\Install\CM\ConfigMgr_2509\` (nested). The deploy script handles this by flattening the folder structure after copy.
 
 ### ConfigMgr setup fails
 
@@ -350,44 +298,41 @@ Invoke-LabCommand -ComputerName CM01 -ScriptBlock {
 ```
 
 Common causes:
-- Missing Windows features (script 04 installs these automatically)
+- Missing Windows features (the deploy script installs these automatically)
 - SQL collation wrong (must be `SQL_Latin1_General_CP1_CI_AS`)
-- Prerequisites not fully downloaded (re-run script 02)
+- Prerequisites not fully downloaded (re-run the script -- it is idempotent)
 - ADK not installed or wrong version
 
 ### ConfigMgr 2509 is not a built-in AutomatedLab role
 
-AutomatedLab's built-in `ConfigurationManager` role only supports up to version 2203. For 2509, script 04 handles the full installation manually using unattended setup. This is why CM01 only gets the `SQLServer2022` role in script 03.
+AutomatedLab's built-in `ConfigurationManager` role only supports up to version 2203. For 2509, the deploy script handles the full installation manually using unattended setup. This is why CM01 only gets the `SQLServer2022` role in the lab definition.
 
 ### SQL memory not configured
 
-ConfigMgr recommends dedicated SQL memory. Script 03 sets SQL Server to 8 GB min/max via `sp_configure`. If you have more host RAM, increase these values in the script.
+ConfigMgr recommends dedicated SQL memory. The deploy script sets SQL Server to 8 GB min/max via `sp_configure`. If you have more host RAM, increase these values in the script.
 
 ## File Structure
 
 ```
 homelab/
-    README.md                    # This file
-    CHANGELOG.md                 # Version history
-    config.psd1                  # All configurable values
-    01-Install-Prerequisites.ps1 # Host: Hyper-V, AutomatedLab, LabSources
-    02-Download-Offline.ps1      # Host: ADK layouts, CM prereqs, runtimes
-    03-Deploy-Infrastructure.ps1 # AutomatedLab: VMs, AD, CA, SQL
-    04-Install-ConfigMgr.ps1     # CM01: ADK, prereqs, CM unattended install
-    05-Configure-AD.ps1          # DC01: AD schema extension, System Management container
-    06-Create-ServiceAccounts.ps1# DC01: Client push + NAA + admin service accounts
-    07-Create-ContentShare.ps1   # CM01: Content share for apps, drivers, images
+    README.md              # This file
+    CHANGELOG.md           # Version history
+    config.psd1            # All configurable values
+    Deploy-HomeLab.ps1     # Single-script deployment (run this)
+    lib/
+        AutomatedLab/      # Vendored AutomatedLab modules (fork)
 ```
 
 ## Estimated Timelines
 
 | Phase | Duration |
 |-------|----------|
-| Prerequisites + Downloads (01-02) | 15-30 minutes |
-| Infrastructure Deployment (03) | 30-60 minutes |
-| ConfigMgr Installation (04) | 1-3 hours |
-| AD + Service Accounts + Share (05-07) | 2 minutes |
-| Console Configuration (08-09) | 5-10 minutes |
+| Prerequisites + Downloads (Phases 1-2) | 15-30 minutes |
+| Lab Deployment + Software Copy (Phases 3-4) | 30-60 minutes |
+| AD + Service Accounts (Phases 5-6) | 2 minutes |
+| Software Install + ConfigMgr (Phases 7-8) | 1-3 hours |
+| Content Share + Tools + Snapshots (Phases 9-12) | 5 minutes |
+| Console Configuration (manual) | 5-10 minutes |
 | **Total** | **2-4 hours** |
 
 ## License

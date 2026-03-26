@@ -1,28 +1,42 @@
 # Changelog
 
+## [2.0.0] - 2026-03-26
+
+### Changed
+- **AutomatedLab handles CM installation end-to-end.** Removed all band-aid phases (software copy, ADK install, ODBC install, CM setup) from Deploy-HomeLab.ps1. The vendored AutomatedLab fork handles VC++, ODBC, ADK, MSOLEDB, CM prereqs, and CM unattended setup natively via the ConfigurationManager role.
+- Script reduced from 1564 to ~890 lines (-43%)
+- CM01 now defined with both `SQLServer2022` and `ConfigurationManager` roles
+- CLIENT01 deferred until after DC01+CM01 are built (avoids RAM contention during AD/SQL install)
+- NAT internet access restricted to CM01 only. DC01 and CLIENT01 are internal-only.
+
+### Fixed (in vendored AutomatedLab fork)
+- DHCP role implemented (was "not implemented" placeholder)
+- CM local source auto-detection (no hardcoded version URLs for CM 2509+)
+- VC++ runtime URLs updated from 2015/2017 to latest (14.50)
+- Reboot after VC++ install before ODBC/MSOLEDB (3010 pending reboot blocked MSI)
+- MSOLEDB 1603 treated as non-fatal (already installed by SQL setup)
+- ADK arguments fixed (single string format, not array)
+- Flatten step idempotent (Copy-Item instead of Move-Item)
+- SQL Server 2022 added to auto-detection
+- setup.exe recursive path search (SMSSETUP\BIN\X64)
+- Default disk size increased from 50GB to 100GB
+
+### Added
+- CLIENT01 (Windows 11 Enterprise) workstation VM
+- svc-CMAdmin as MECM Full Administrator (automated)
+- Tools deployment (cc4cm + ApplicationPackager) to CM01
+- Deployment-Complete snapshots on all VMs
+
+---
+
 ## [1.0.0] - 2026-03-26
 
 ### Changed
 - Consolidated all 7 numbered scripts into a single `Deploy-HomeLab.ps1`
-- Script runs all phases end-to-end: prerequisites, downloads, lab deployment, AD config, service accounts, CM install, content share, tools, snapshots
-- Idempotent design -- safe to re-run if it fails partway through (each step checks if work is already done)
-- Hyper-V check now errors with instructions instead of attempting to enable (requires reboot)
-- Service account creation uses a script file copied to DC01 instead of inline splatting (avoids remoting serialization issues)
-
-### Added
-- Phase 10: Adds svc-CMAdmin as MECM Full Administrator via CM PowerShell module
-- Phase 11: Deploys cc4cm and ApplicationPackager to `C:\Tools\` on CM01
-- ConfigMgr install now checks for SMS_EXECUTIVE service to skip if already installed
-- CM provider readiness check with retry loop before adding admin user
+- Idempotent design -- safe to re-run if it fails partway through
 
 ### Removed
-- `01-Install-Prerequisites.ps1` (merged into Phase 1)
-- `02-Download-Offline.ps1` (merged into Phase 2)
-- `03-Deploy-Infrastructure.ps1` (merged into Phases 3-4)
-- `04-Install-ConfigMgr.ps1` (merged into Phases 7-8)
-- `05-Configure-AD.ps1` (merged into Phase 5)
-- `06-Create-ServiceAccounts.ps1` (merged into Phase 6)
-- `07-Create-ContentShare.ps1` (merged into Phase 9)
+- All 7 numbered scripts (merged into single Deploy-HomeLab.ps1)
 
 ---
 

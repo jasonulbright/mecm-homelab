@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.2.0] - 2026-03-26
+
+### Added
+- `05-Configure-AD.ps1` — AD schema extension (`extadsch.exe`) and System Management container with site server permissions
+- `06-Create-ServiceAccounts.ps1` — Client Push (`svc-CMPush`, Domain Admins) and NAA (`svc-CMNAA`, Domain Users only) service accounts
+- Service account configuration in `config.psd1` (names, passwords, group membership)
+- Post-deployment console configuration steps in README (discovery, boundaries, boundary groups, client push)
+- NAA least-privilege documentation (Domain Users only, no admin shares needed)
+
+---
+
 ## [0.1.0] - 2026-03-25
 
 ### Added

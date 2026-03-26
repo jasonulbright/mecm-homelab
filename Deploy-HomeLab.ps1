@@ -2,7 +2,7 @@
 #Requires -Version 5.1
 <#
 .SYNOPSIS
-    Deploys a complete MECM home lab: DC01 + CM01 with AD, CA, SQL, and ConfigMgr 2509.
+    Deploys a complete MECM home lab: DC01 + CM01 + CLIENT01 with AD, CA, SQL, ConfigMgr 2509, and a Windows 11 workstation.
 
 .DESCRIPTION
     Single-script deployment that performs all steps:
@@ -515,6 +515,24 @@ if (-not $labImported) {
         -OperatingSystem 'Windows Server 2025 Datacenter Evaluation (Desktop Experience)'
 
     Write-Status "CM01 defined: $($Config.CM.IP), $([math]::Round($Config.CM.Memory/1GB))GB RAM, $($Config.CM.Processors) vCPU"
+
+    # ── CLIENT01 ──
+    Write-Host "`n--- Defining CLIENT01 ---" -ForegroundColor White
+
+    $clientNics = @(
+        New-LabNetworkAdapterDefinition -VirtualSwitch $networkName -Ipv4Address "$($Config.Client.IP)/24" -Ipv4DNSServers $Config.DC.IP
+        New-LabNetworkAdapterDefinition -VirtualSwitch 'Default Switch' -UseDhcp
+    )
+
+    Add-LabMachineDefinition -Name $Config.Client.Name `
+        -Memory $Config.Client.Memory `
+        -MaxMemory $Config.Client.MaxMemory `
+        -Processors $Config.Client.Processors `
+        -NetworkAdapter $clientNics `
+        -DomainName $domainName `
+        -OperatingSystem 'Windows 11 Enterprise Evaluation'
+
+    Write-Status "CLIENT01 defined: $($Config.Client.IP), $([math]::Round($Config.Client.Memory/1GB))GB RAM, $($Config.Client.Processors) vCPU"
 
     # ── Install Lab ──
     Write-Host "`n--- Installing Lab (this will take 30-60 minutes) ---" -ForegroundColor White
@@ -1464,6 +1482,7 @@ Write-Step 'Phase 12: Snapshots'
 
 Checkpoint-VM -Name $Config.DC.Name -SnapshotName 'Deployment-Complete' -ErrorAction SilentlyContinue
 Checkpoint-VM -Name $Config.CM.Name -SnapshotName 'Deployment-Complete' -ErrorAction SilentlyContinue
+Checkpoint-VM -Name $Config.Client.Name -SnapshotName 'Deployment-Complete' -ErrorAction SilentlyContinue
 Write-Status 'Snapshots created: Deployment-Complete'
 
 ###############################################################################

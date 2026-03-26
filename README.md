@@ -38,7 +38,7 @@ The ODBC Driver and VC++ runtimes are downloaded automatically by script 02.
 
 ## Quick Start
 
-All scripts must be run as Administrator.
+All scripts must be run as **Administrator**.
 
 ```powershell
 # Step 1: Install Hyper-V, AutomatedLab, create folder structure
@@ -55,6 +55,19 @@ All scripts must be run as Administrator.
 # Step 4: Install ADK, prerequisites, and ConfigMgr 2509
 .\04-Install-ConfigMgr.ps1
 # (~1-3 hours)
+
+# Step 5: Extend AD schema, configure System Management container
+.\05-Configure-AD.ps1
+
+# Step 6: Create service accounts (client push + NAA)
+.\06-Create-ServiceAccounts.ps1
+
+# Step 7: Open the CM console on CM01 and configure:
+#   - Active Directory Forest Discovery (enable)
+#   - Boundary (IP subnet 192.168.50.0/24)
+#   - Boundary Group (add boundary + CM01 as site system)
+#   - Client Push Installation (enable, add svc-CMPush account)
+#   - Software Distribution > NAA (add svc-CMNAA account)
 ```
 
 ## What Each Script Does
@@ -291,9 +304,11 @@ homelab/
 
 | Phase | Duration |
 |-------|----------|
-| Prerequisites + Downloads | 15-30 minutes |
-| Infrastructure Deployment (script 03) | 30-60 minutes |
-| ConfigMgr Installation (script 04) | 1-3 hours |
+| Prerequisites + Downloads (01-02) | 15-30 minutes |
+| Infrastructure Deployment (03) | 30-60 minutes |
+| ConfigMgr Installation (04) | 1-3 hours |
+| AD + Service Accounts (05-06) | 2 minutes |
+| Console Configuration (07) | 5-10 minutes |
 | **Total** | **2-4 hours** |
 
 ## License

@@ -1,5 +1,31 @@
 # Changelog
 
+## [1.0.0] - 2026-03-26
+
+### Changed
+- Consolidated all 7 numbered scripts into a single `Deploy-HomeLab.ps1`
+- Script runs all phases end-to-end: prerequisites, downloads, lab deployment, AD config, service accounts, CM install, content share, tools, snapshots
+- Idempotent design -- safe to re-run if it fails partway through (each step checks if work is already done)
+- Hyper-V check now errors with instructions instead of attempting to enable (requires reboot)
+- Service account creation uses a script file copied to DC01 instead of inline splatting (avoids remoting serialization issues)
+
+### Added
+- Phase 10: Adds svc-CMAdmin as MECM Full Administrator via CM PowerShell module
+- Phase 11: Deploys cc4cm and ApplicationPackager to `C:\Tools\` on CM01
+- ConfigMgr install now checks for SMS_EXECUTIVE service to skip if already installed
+- CM provider readiness check with retry loop before adding admin user
+
+### Removed
+- `01-Install-Prerequisites.ps1` (merged into Phase 1)
+- `02-Download-Offline.ps1` (merged into Phase 2)
+- `03-Deploy-Infrastructure.ps1` (merged into Phases 3-4)
+- `04-Install-ConfigMgr.ps1` (merged into Phases 7-8)
+- `05-Configure-AD.ps1` (merged into Phase 5)
+- `06-Create-ServiceAccounts.ps1` (merged into Phase 6)
+- `07-Create-ContentShare.ps1` (merged into Phase 9)
+
+---
+
 ## [0.2.1] - 2026-03-26
 
 ### Added

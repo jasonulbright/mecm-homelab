@@ -125,10 +125,10 @@ $moduleDirs = Get-ChildItem $vendoredAL -Directory | Where-Object { Test-Path (J
 $targetPath = Join-Path $env:ProgramFiles 'WindowsPowerShell\Modules'
 foreach ($mod in $moduleDirs) {
     $dest = Join-Path $targetPath $mod.Name
-    if (-not (Test-Path $dest)) {
-        Copy-Item $mod.FullName $dest -Recurse -Force
-        Write-Status "Installed: $($mod.Name)" -Level INFO
-    }
+    # Always overwrite to ensure vendored fixes are applied
+    if (Test-Path $dest) { Remove-Item $dest -Recurse -Force }
+    Copy-Item $mod.FullName $dest -Recurse -Force
+    Write-Status "Installed: $($mod.Name)" -Level INFO
 }
 
 # Remove non-essential modules that cause parse errors (Recipe, Ships)
@@ -157,6 +157,12 @@ if (-not $al) {
 Write-Status "AutomatedLab v$($al.Version) (vendored fork)"
 
 Import-Module AutomatedLab -ErrorAction Stop
+
+# Force our vendored VC++ URLs (PSFConfig -Initialize won't overwrite existing values)
+Set-PSFConfig -Module 'AutomatedLab' -Name cppredist64_2017 -Value 'https://aka.ms/vs/18/release/vc_redist.x64.exe'
+Set-PSFConfig -Module 'AutomatedLab' -Name cppredist32_2017 -Value 'https://aka.ms/vs/18/release/vc_redist.x86.exe'
+Set-PSFConfig -Module 'AutomatedLab' -Name cppredist64_2015 -Value 'https://aka.ms/vs/18/release/vc_redist.x64.exe'
+Set-PSFConfig -Module 'AutomatedLab' -Name cppredist32_2015 -Value 'https://aka.ms/vs/18/release/vc_redist.x86.exe'
 
 # ── 1.4 LabSources folder ────────────────────────────────────────────────────
 

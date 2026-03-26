@@ -960,6 +960,11 @@ Invoke-LabCommand -ComputerName $cmName -ActivityName 'Install VC++ x86' -Script
 }
 Write-Status 'VC++ x86 installed'
 
+# VC++ returns 3010 (reboot required) — must reboot before ODBC/MSOLEDB will install
+Write-Status 'Rebooting CM01 after VC++ install (exit code 3010)...' -Level RUN
+Restart-LabVM -ComputerName $cmName -Wait
+Write-Status 'CM01 restarted'
+
 # ── 7.2 ODBC Driver ──────────────────────────────────────────────────────────
 
 Write-Host "`n--- ODBC Driver $($Config.ODBCVersion) ---" -ForegroundColor White

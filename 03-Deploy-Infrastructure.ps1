@@ -236,10 +236,10 @@ Write-Step 'Copying Software to CM01'
 Invoke-LabCommand -ComputerName $Config.CM.Name -ActivityName 'Create Install directories' -ScriptBlock {
     $dirs = @(
         'C:\Install'
-        'C:\Install\ADKOffline'
-        'C:\Install\ADKPEOffline'
+        'C:\Install\ADKoffline'
+        'C:\Install\ADKPEoffline'
         'C:\Install\CM'
-        'C:\Install\CMPrereqs'
+        'C:\Install\CM-Prereqs'
         'C:\Install\ODBC'
         'C:\Install\VCRedist'
     )
@@ -248,41 +248,52 @@ Invoke-LabCommand -ComputerName $Config.CM.Name -ActivityName 'Create Install di
     }
 }
 
-# ADK offline layout
-$adkLayout = Join-Path $swPkg 'ADK\Offline'
+# ADK offline layout (layout in ADKoffline, bootstrapper in ADK)
+$adkLayout = Join-Path $swPkg 'ADKoffline'
+$adkBootstrapper = Join-Path $swPkg 'ADK\adksetup.exe'
 if (Test-Path $adkLayout) {
     Write-Status 'Copying ADK offline layout...' -Level RUN
-    Copy-LabFileItem -Path $adkLayout -ComputerName $Config.CM.Name -DestinationFolderPath 'C:\Install\ADKOffline' -Recurse
+    Copy-LabFileItem -Path $adkLayout -ComputerName $Config.CM.Name -DestinationFolderPath 'C:\Install' -Recurse
 
-    # Flatten: Copy-LabFileItem nests the folder, so move contents up if needed
+    # Flatten nested folder from Copy-LabFileItem
     Invoke-LabCommand -ComputerName $Config.CM.Name -ActivityName 'Flatten ADK folder' -ScriptBlock {
-        $nested = 'C:\Install\ADKOffline\Offline'
+        $nested = 'C:\Install\ADKoffline\ADKoffline'
         if (Test-Path $nested) {
-            Get-ChildItem $nested | Move-Item -Destination 'C:\Install\ADKOffline' -Force
+            Get-ChildItem $nested | Move-Item -Destination 'C:\Install\ADKoffline' -Force
             Remove-Item $nested -Recurse -Force -ErrorAction SilentlyContinue
         }
+    }
+
+    # Copy bootstrapper into the layout folder
+    if (Test-Path $adkBootstrapper) {
+        Copy-LabFileItem -Path $adkBootstrapper -ComputerName $Config.CM.Name -DestinationFolderPath 'C:\Install\ADKoffline'
     }
     Write-Status 'ADK offline layout copied'
 } else {
-    Write-Status 'ADK offline layout not found - skipping' -Level WARN
+    Write-Status "ADK offline layout not found at $adkLayout" -Level WARN
 }
 
-# ADK PE offline layout
-$adkPeLayout = Join-Path $swPkg 'ADKPE\Offline'
+# ADK PE offline layout (layout in ADKPEoffline, bootstrapper in ADKPE)
+$adkPeLayout = Join-Path $swPkg 'ADKPEoffline'
+$adkPeBootstrapper = Join-Path $swPkg 'ADKPE\adkwinpesetup.exe'
 if (Test-Path $adkPeLayout) {
     Write-Status 'Copying ADK PE offline layout...' -Level RUN
-    Copy-LabFileItem -Path $adkPeLayout -ComputerName $Config.CM.Name -DestinationFolderPath 'C:\Install\ADKPEOffline' -Recurse
+    Copy-LabFileItem -Path $adkPeLayout -ComputerName $Config.CM.Name -DestinationFolderPath 'C:\Install' -Recurse
 
     Invoke-LabCommand -ComputerName $Config.CM.Name -ActivityName 'Flatten ADK PE folder' -ScriptBlock {
-        $nested = 'C:\Install\ADKPEOffline\Offline'
+        $nested = 'C:\Install\ADKPEoffline\ADKPEoffline'
         if (Test-Path $nested) {
-            Get-ChildItem $nested | Move-Item -Destination 'C:\Install\ADKPEOffline' -Force
+            Get-ChildItem $nested | Move-Item -Destination 'C:\Install\ADKPEoffline' -Force
             Remove-Item $nested -Recurse -Force -ErrorAction SilentlyContinue
         }
     }
+
+    if (Test-Path $adkPeBootstrapper) {
+        Copy-LabFileItem -Path $adkPeBootstrapper -ComputerName $Config.CM.Name -DestinationFolderPath 'C:\Install\ADKPEoffline'
+    }
     Write-Status 'ADK PE offline layout copied'
 } else {
-    Write-Status 'ADK PE offline layout not found - skipping' -Level WARN
+    Write-Status "ADK PE offline layout not found at $adkPeLayout" -Level WARN
 }
 
 # CM source
@@ -305,17 +316,20 @@ if ($cmSourceDir) {
     Write-Status 'CM source folder not found - skipping' -Level WARN
 }
 
-# CM prerequisites
-$prereqDir = Join-Path $swPkg 'CMPrereqs'
+# CM prerequisites (folder may be CM-Prereqs or CMPrereqs)
+$prereqDir = Join-Path $swPkg 'CM-Prereqs'
+if (-not (Test-Path $prereqDir)) { $prereqDir = Join-Path $swPkg 'CMPrereqs' }
 if ((Get-ChildItem $prereqDir -ErrorAction SilentlyContinue | Measure-Object).Count -gt 0) {
     Write-Status 'Copying CM prerequisites...' -Level RUN
-    Copy-LabFileItem -Path $prereqDir -ComputerName $Config.CM.Name -DestinationFolderPath 'C:\Install' -Recurse
+    Copy-LabFileItem -Path $prereqDir -ComputerName $Config.CM.Name -DestinationFolderPath 'C:\Install\CM-Prereqs' -Recurse
 
-    Invoke-LabCommand -ComputerName $Config.CM.Name -ActivityName 'Flatten CMPrereqs folder' -ScriptBlock {
-        $nested = 'C:\Install\CMPrereqs\CMPrereqs'
-        if (Test-Path $nested) {
-            Get-ChildItem $nested | Move-Item -Destination 'C:\Install\CMPrereqs' -Force
-            Remove-Item $nested -Recurse -Force -ErrorAction SilentlyContinue
+    # Flatten nested folder from Copy-LabFileItem
+    Invoke-LabCommand -ComputerName $Config.CM.Name -ActivityName 'Flatten CM-Prereqs folder' -ScriptBlock {
+        $base = 'C:\Install\CM-Prereqs'
+        $subDirs = Get-ChildItem $base -Directory -ErrorAction SilentlyContinue
+        foreach ($sub in $subDirs) {
+            Get-ChildItem $sub.FullName | Move-Item -Destination $base -Force
+            Remove-Item $sub.FullName -Recurse -Force -ErrorAction SilentlyContinue
         }
     }
     Write-Status 'CM prerequisites copied'

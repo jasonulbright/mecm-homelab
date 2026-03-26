@@ -122,7 +122,7 @@ Write-Status "ODBC Driver $($Config.ODBCVersion) installed"
 Write-Step 'Installing MSOLEDB 19'
 
 Invoke-LabCommand -ComputerName $cmName -ActivityName 'Install MSOLEDB' -ScriptBlock {
-    $msi = Get-ChildItem 'C:\Install\CMPrereqs' -Filter 'msoledbsql*.msi' -ErrorAction SilentlyContinue |
+    $msi = Get-ChildItem 'C:\Install\CM-Prereqs' -Filter 'msoledbsql*.msi' -ErrorAction SilentlyContinue |
         Sort-Object Name -Descending | Select-Object -First 1
     if (-not $msi) {
         # Also check CM source prereqs subfolder
@@ -149,9 +149,9 @@ Write-Status 'MSOLEDB installed'
 Write-Step 'Installing Windows ADK'
 
 Invoke-LabCommand -ComputerName $cmName -ActivityName 'Install ADK' -ScriptBlock {
-    $adkSetup = Get-ChildItem 'C:\Install\ADKOffline' -Filter 'adksetup*' -ErrorAction SilentlyContinue | Select-Object -First 1
+    $adkSetup = Get-ChildItem 'C:\Install\ADKoffline' -Filter 'adksetup*' -ErrorAction SilentlyContinue | Select-Object -First 1
     if (-not $adkSetup) {
-        throw 'adksetup.exe not found in C:\Install\ADKOffline'
+        throw 'adksetup.exe not found in C:\Install\ADKoffline'
     }
 
     # Check if already installed
@@ -182,9 +182,9 @@ Write-Status 'ADK installed (DeploymentTools + UserStateMigrationTool)'
 Write-Step 'Installing ADK WinPE Add-on'
 
 Invoke-LabCommand -ComputerName $cmName -ActivityName 'Install ADK WinPE' -ScriptBlock {
-    $peSetup = Get-ChildItem 'C:\Install\ADKPEOffline' -Filter 'adkwinpe*' -ErrorAction SilentlyContinue | Select-Object -First 1
+    $peSetup = Get-ChildItem 'C:\Install\ADKPEoffline' -Filter 'adkwinpe*' -ErrorAction SilentlyContinue | Select-Object -First 1
     if (-not $peSetup) {
-        throw 'adkwinpesetup.exe not found in C:\Install\ADKPEOffline'
+        throw 'adkwinpesetup.exe not found in C:\Install\ADKPEoffline'
     }
 
     # Check if already installed
@@ -234,7 +234,7 @@ SDKServer=$CmFqdn
 RoleCommunicationProtocol=HTTPorHTTPS
 ClientsUsePKICertificate=0
 PrerequisiteComp=1
-PrerequisitePath=C:\Install\CMPrereqs
+PrerequisitePath=C:\Install\CM-Prereqs
 AdminConsole=1
 JoinCEIP=0
 MobileDeviceLanguage=0

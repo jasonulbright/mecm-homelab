@@ -1025,12 +1025,7 @@ Invoke-LabCommand -ComputerName $cmName -ActivityName 'Install ADK' -ScriptBlock
     }
 
     $proc = Start-Process -FilePath $adkSetup.FullName `
-        -ArgumentList @(
-            '/quiet',
-            '/installpath', 'C:\Program Files (x86)\Windows Kits\10',
-            '/features', 'OptionId.DeploymentTools', 'OptionId.UserStateMigrationTool',
-            '/ceip', 'off'
-        ) `
+        -ArgumentList '/quiet /norestart /ceip off /features OptionId.DeploymentTools OptionId.UserStateMigrationTool' `
         -Wait -PassThru
     if ($proc.ExitCode -ne 0) {
         throw "ADK install failed with exit code $($proc.ExitCode)"
@@ -1061,12 +1056,7 @@ Invoke-LabCommand -ComputerName $cmName -ActivityName 'Install ADK WinPE' -Scrip
     }
 
     $proc = Start-Process -FilePath $peSetup.FullName `
-        -ArgumentList @(
-            '/quiet',
-            '/installpath', 'C:\Program Files (x86)\Windows Kits\10',
-            '/features', 'OptionId.WindowsPreinstallationEnvironment',
-            '/ceip', 'off'
-        ) `
+        -ArgumentList '/quiet /norestart /ceip off /features OptionId.WindowsPreinstallationEnvironment' `
         -Wait -PassThru
     if ($proc.ExitCode -ne 0) {
         throw "ADK WinPE install failed with exit code $($proc.ExitCode)"

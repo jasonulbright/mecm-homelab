@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.2.1] - 2026-03-26
+
+### Added
+- `svc-CMAdmin` account — Domain Admin + Remote Desktop Users for interactive logon, CM console, and cc4cm
+- Quick Start section updated with all 7 steps including post-deployment console configuration
+
+### Fixed
+- `06-Create-ServiceAccounts.ps1` — replaced splatting `@{}` with explicit parameters (splatting breaks through PSRemoting layers)
+
+---
+
 ## [0.2.0] - 2026-03-26
 
 ### Added

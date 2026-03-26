@@ -473,7 +473,7 @@ if (-not $labImported) {
     )
 
     $dcNics = @(
-        New-LabNetworkAdapterDefinition -VirtualSwitch $networkName -Ipv4Address "$($Config.DC.IP)/24"
+        New-LabNetworkAdapterDefinition -VirtualSwitch $networkName -Ipv4Address "$($Config.DC.IP)/24" -Ipv4DNSServers $Config.DC.IP
         New-LabNetworkAdapterDefinition -VirtualSwitch 'Default Switch' -UseDhcp
     )
 
@@ -483,7 +483,6 @@ if (-not $labImported) {
         -MaxMemory $Config.DC.MaxMemory `
         -Processors $Config.DC.Processors `
         -NetworkAdapter $dcNics `
-        -DnsServer1 $Config.DC.IP `
         -DomainName $domainName `
         -OperatingSystem 'Windows Server 2025 Datacenter Evaluation (Desktop Experience)'
 
@@ -501,7 +500,7 @@ if (-not $labImported) {
     Add-LabDiskDefinition -Name 'CM01-Data' -DiskSizeInGb $Config.CM.DataDisk
 
     $cmNics = @(
-        New-LabNetworkAdapterDefinition -VirtualSwitch $networkName -Ipv4Address "$($Config.CM.IP)/24"
+        New-LabNetworkAdapterDefinition -VirtualSwitch $networkName -Ipv4Address "$($Config.CM.IP)/24" -Ipv4DNSServers $Config.DC.IP
         New-LabNetworkAdapterDefinition -VirtualSwitch 'Default Switch' -UseDhcp
     )
 
@@ -512,7 +511,6 @@ if (-not $labImported) {
         -Processors $Config.CM.Processors `
         -DiskName 'CM01-SQL', 'CM01-Data' `
         -NetworkAdapter $cmNics `
-        -DnsServer1 $Config.DC.IP `
         -DomainName $domainName `
         -OperatingSystem 'Windows Server 2025 Datacenter Evaluation (Desktop Experience)'
 

@@ -10,6 +10,7 @@
         Name       = 'DC01'
         IP         = '192.168.50.10'
         Memory     = 2GB
+        MinMemory  = 1GB
         MaxMemory  = 2GB
         Processors = 2
     }
@@ -17,6 +18,7 @@
         Name       = 'CM01'
         IP         = '192.168.50.20'
         Memory     = 10GB
+        MinMemory  = 4GB
         MaxMemory  = 12GB
         Processors = 4
         SQLDisk    = 50   # GB
@@ -27,6 +29,7 @@
         Name       = 'CLIENT01'
         IP         = '192.168.50.100'
         Memory     = 4GB
+        MinMemory  = 2GB
         MaxMemory  = 4GB
         Processors = 2
     }

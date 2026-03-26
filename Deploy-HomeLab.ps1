@@ -990,6 +990,10 @@ Invoke-LabCommand -ComputerName $cmName -ActivityName 'Install MSOLEDB' -ScriptB
             -Wait -PassThru
         if ($proc.ExitCode -eq 0 -or $proc.ExitCode -eq 3010) {
             Write-Host "MSOLEDB installed (exit code: $($proc.ExitCode))"
+        } elseif ($proc.ExitCode -eq 1603) {
+            # 1603 often means an older version is already installed or pending reboot.
+            # CM setup will handle MSOLEDB installation/upgrade itself from prereqs.
+            Write-Host "MSOLEDB install returned 1603 (likely already installed). CM setup will handle upgrade."
         } else {
             throw "MSOLEDB install failed with exit code $($proc.ExitCode)"
         }

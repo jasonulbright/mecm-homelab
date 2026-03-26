@@ -443,9 +443,9 @@ if (-not $labImported) {
         -AddressSpace "$netPrefix.0/24" `
         -HyperVProperties @{ SwitchType = 'Internal' }
 
-    # Default Switch for internet access (NAT)
+    # Default Switch for internet access (NAT) - reference existing Hyper-V built-in switch
     Add-LabVirtualNetworkDefinition -Name 'Default Switch' `
-        -HyperVProperties @{ SwitchType = 'External' }
+        -HyperVProperties @{ SwitchType = 'Internal' }
 
     # Domain
     Add-LabDomainDefinition -Name $domainName `

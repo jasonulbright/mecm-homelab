@@ -1160,9 +1160,10 @@ Write-Host "`n--- Installing ConfigMgr 2509 (this will take 1-3 hours) ---" -For
 Write-Host "  Started at: $(Get-Date -Format 'HH:mm:ss')" -ForegroundColor DarkGray
 
 Invoke-LabCommand -ComputerName $cmName -ActivityName 'Install ConfigMgr 2509' -ScriptBlock {
-    $setupExe = Get-ChildItem 'C:\Install\CM' -Filter 'setup.exe' -ErrorAction SilentlyContinue | Select-Object -First 1
+    $setupExe = Get-ChildItem 'C:\Install\CM' -Filter 'setup.exe' -Recurse -ErrorAction SilentlyContinue |
+        Where-Object { $_.DirectoryName -match 'SMSSETUP.*X64' } | Select-Object -First 1
     if (-not $setupExe) {
-        throw 'setup.exe not found in C:\Install\CM'
+        throw 'setup.exe not found in C:\Install\CM\SMSSETUP\BIN\X64\'
     }
 
     $iniFile = 'C:\Install\CM\setup.ini'

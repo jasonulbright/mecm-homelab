@@ -1,0 +1,133 @@
+﻿TOPIC
+    about_automatedlabroles
+
+SHORT DESCRIPTION
+    Generic help about the role system of AutomatedLab
+
+LONG DESCRIPTION
+    There are some predefined roles in AutomatedLab that can be assigned to a
+    machine. A machine can have none, one or multiple roles. Some roles are
+    mutually exclusive like RootDC and FirstChildDC, or SQLSevrer2008 and SQLServer2012.
+    Roles can be assigned in two ways. The first and most simple is this one.
+    However, it does not allow any customization:
+
+    Add-LabMachineDefinition -Name DC1 -Roles RootDC
+    Add-LabMachineDefinition -Name CA1 -Roles CaRoot, Routing
+    Add-LabMachineDefinition -Name Web1 -Roles WebServer
+
+    Many roles offer options for customization. The options are documented in
+    the role documentation. If you want to define a customized role, use the
+    cmdlet Get-LabMachineRoleDefinition which takes two parameters, the role and
+    properties. The properties parameter takes a hashtable. If you want to
+    define the role FirstChildDC, you can leave everything to default /
+    automatics or go with your own definition.
+
+    $role = Get-LabMachineRoleDefinition -Role FirstChildDC -Properties @{ ParentDomain = 'vm.net'; NewDomain = 'a'; DomainFunctionalLevel = 'Win2012R2' }
+    Add-LabMachineDefinition -Name T3ADC1 -IpAddress 192.168.50.20 -DomainName a.vm.net -Roles $role
+
+    And another example that defines the Exchange 2013 role with an organization
+    name defined:
+
+    $role = Get-LabMachineRoleDefinition -Role Exchange2013 -Properties @{ OrganizationName = 'TestOrg' }
+    Add-LabMachineDefinition -Name T3AEX1 -Memory 4GB -IpAddress 192.168.50.52 -DomainName a.vm.net -Roles $role -DiskName ExDataDisk
+
+    AVAILABLE ROLES
+    The list of available roles in AutomatedLab is below. Of course, there are
+    many products missing. AutomatedLab offers a lot of features that makes it a
+    good basis for adding roles to it or implementing new roles in separate
+    projects that are based on AutomatedLab. A good example for this is
+    SfBAutomatedLab. Skype for Business role model is too complex to be added to
+    AL. But AL was used for deploying the VMs, OS, AD, SQL, PKI, etc. The Skype
+    for Business roles are installed using the cmdlet Invoke-LabCommand,
+    Install-LabSoftwarePackage and Mount- / Dismount-LabIsoImage. You may want
+    to check out the
+    project on GitHub
+    .
+
+    LIST OF ROLES
+    - ADFS
+- ADFSProxy
+- ADFSWAP
+-
+    AzDevOps
+    - CaRoot
+- CaSubordinate
+-
+    ConfigurationManager
+    -
+    DC
+    - DHCP -
+    DSCPullServer
+    -
+    DynamicsAdmin
+    -
+    DynamicsBackend
+    -
+    DynamicsFrontend
+    -
+    DynamicsFull
+    -
+    FailoverNode
+    -
+    FailoverStorage
+    - FileServer -
+    FirstChildDC
+    -
+    HyperV
+    - RemoteDesktopConnectionBroker
+    - RemoteDesktopGateway
+    - RemoteDesktopLicensing
+    - RemoteDesktopSessionHost
+    - RemoteDesktopVirtualizationHost
+    - RemoteDesktopWebAccess
+    -
+    RootDC
+    - Routing
+    - ScomConsole
+    - ScomGateway
+    - ScomManagement
+    - ScomReporting
+    - ScomWebConsole
+    -
+    Scvmm2016
+    -
+    Scvmm2019
+    -
+    Scvmm2022
+    -
+    SharePoint2013
+    -
+    SharePoint2016
+    -
+    SharePoint2019
+    -
+    SQLServer2008
+    -
+    SQLServer2008R2
+    -
+    SQLServer2012
+    -
+    SQLServer2014
+    -
+    SQLServer2016
+    -
+    SQLServer2017
+    -
+    SQLServer2019
+    -
+    SQLServer2022
+    -
+    SQLServer2025
+    -
+    Tfs2015
+    -
+    Tfs2017
+    -
+    Tfs2018
+    -
+    TfsBuildWorker
+    - VisualStudio2013
+- VisualStudio2015
+- WebServer
+- WindowsAdminCenter
+

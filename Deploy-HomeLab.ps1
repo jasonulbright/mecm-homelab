@@ -402,7 +402,7 @@ if (-not $labImported) {
     $dcRoles = @(
         Get-LabMachineRoleDefinition -Role RootDC
         Get-LabMachineRoleDefinition -Role CaRoot
-        Get-LabMachineRoleDefinition -Role Routing
+        # Routing role removed — requires 2 NICs. CM01 has its own Default Switch for internet.
     )
 
     $dcNics = @(

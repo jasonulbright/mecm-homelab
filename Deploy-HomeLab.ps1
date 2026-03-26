@@ -1249,7 +1249,7 @@ Invoke-LabCommand -ComputerName $cmName -ActivityName 'Install ConfigMgr 2509' -
         }
         throw "ConfigMgr setup failed with exit code $($proc.ExitCode)"
     }
-} -Timeout ([TimeSpan]::FromHours(4))
+}
 
 Write-Status 'ConfigMgr setup completed'
 Write-Host "  Finished at: $(Get-Date -Format 'HH:mm:ss')" -ForegroundColor DarkGray

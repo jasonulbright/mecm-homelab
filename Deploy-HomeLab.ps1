@@ -720,11 +720,13 @@ if ($cmSourceDir) {
 
     Invoke-LabCommand -ComputerName $cmName -ActivityName 'Flatten CM folder' -ScriptBlock {
         $cmBase = 'C:\Install\CM'
-        $subDirs = Get-ChildItem $cmBase -Directory -ErrorAction SilentlyContinue
-        foreach ($sub in $subDirs) {
-            $items = Get-ChildItem $sub.FullName
-            foreach ($item in $items) { Move-Item -Path $item.FullName -Destination $cmBase -Force }
-            Remove-Item $sub.FullName -Recurse -Force -ErrorAction SilentlyContinue
+        # Only flatten if SMSSETUP is nested (not already at root)
+        if (-not (Test-Path "$cmBase\SMSSETUP") -and (Get-ChildItem $cmBase -Directory -ErrorAction SilentlyContinue)) {
+            $subDirs = Get-ChildItem $cmBase -Directory
+            foreach ($sub in $subDirs) {
+                Copy-Item "$($sub.FullName)\*" $cmBase -Recurse -Force
+                Remove-Item $sub.FullName -Recurse -Force -ErrorAction SilentlyContinue
+            }
         }
     }
     Write-Status 'CM source copied and flattened'
@@ -741,11 +743,13 @@ if ((Get-ChildItem $prereqDir -ErrorAction SilentlyContinue | Measure-Object).Co
 
     Invoke-LabCommand -ComputerName $cmName -ActivityName 'Flatten CM-Prereqs folder' -ScriptBlock {
         $base = 'C:\Install\CM-Prereqs'
+        # Only flatten if there's a nested subfolder (not already flat)
         $subDirs = Get-ChildItem $base -Directory -ErrorAction SilentlyContinue
-        foreach ($sub in $subDirs) {
-            $items = Get-ChildItem $sub.FullName
-            foreach ($item in $items) { Move-Item -Path $item.FullName -Destination $base -Force }
-            Remove-Item $sub.FullName -Recurse -Force -ErrorAction SilentlyContinue
+        if ($subDirs -and -not (Get-ChildItem $base -File -ErrorAction SilentlyContinue)) {
+            foreach ($sub in $subDirs) {
+                Copy-Item "$($sub.FullName)\*" $base -Recurse -Force
+                Remove-Item $sub.FullName -Recurse -Force -ErrorAction SilentlyContinue
+            }
         }
     }
     Write-Status 'CM prerequisites copied'

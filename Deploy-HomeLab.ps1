@@ -518,9 +518,25 @@ if (-not $labImported) {
 
     Write-Status "CM01 defined: $($Config.CM.IP), $([math]::Round($Config.CM.Memory/1GB))GB RAM, $($Config.CM.Processors) vCPU"
 
-    # CLIENT01 is added AFTER DC01+CM01 are built (avoids RAM contention during AD/SQL install)
+    # ── CLIENT01 (created but not deployed until after DC+CM are done) ──
+    Write-Host "`n--- Defining CLIENT01 (deferred deployment) ---" -ForegroundColor White
 
-    # ── Install Lab (DC01 + CM01 only) ──
+    $clientNics = @(
+        New-LabNetworkAdapterDefinition -VirtualSwitch $networkName -Ipv4Address "$($Config.Client.IP)/24" -Ipv4DNSServers $Config.DC.IP
+        New-LabNetworkAdapterDefinition -VirtualSwitch 'Default Switch' -UseDhcp
+    )
+    Add-LabMachineDefinition -Name $Config.Client.Name `
+        -Memory $Config.Client.Memory `
+        -MinMemory $Config.Client.MinMemory `
+        -MaxMemory $Config.Client.MaxMemory `
+        -Processors $Config.Client.Processors `
+        -NetworkAdapter $clientNics `
+        -DomainName $domainName `
+        -OperatingSystem 'Windows 11 Enterprise Evaluation' `
+        -SkipDeployment
+    Write-Status "CLIENT01 defined (will deploy after DC+CM)" -Level INFO
+
+    # ── Install Lab (DC01 + CM01 — CLIENT01 skipped via SkipDeployment) ──
     Write-Host "`n--- Installing Lab - DC01 + CM01 (this will take 30-60 minutes) ---" -ForegroundColor White
     Write-Host "  Started at: $(Get-Date -Format 'HH:mm:ss')" -ForegroundColor DarkGray
 
@@ -543,22 +559,18 @@ if (-not $labImported) {
     Write-Status 'DC01 + CM01 deployed and domain joined'
     Write-Host "  Finished at: $(Get-Date -Format 'HH:mm:ss')" -ForegroundColor DarkGray
 
-    # ── CLIENT01: Add after infrastructure is up (avoids RAM contention) ──
-    Write-Host "`n--- Adding CLIENT01 ---" -ForegroundColor White
-    $clientNics = @(
-        New-LabNetworkAdapterDefinition -VirtualSwitch $networkName -Ipv4Address "$($Config.Client.IP)/24" -Ipv4DNSServers $Config.DC.IP
-        New-LabNetworkAdapterDefinition -VirtualSwitch 'Default Switch' -UseDhcp
-    )
-    Add-LabMachineDefinition -Name $Config.Client.Name `
-        -Memory $Config.Client.Memory `
-        -MinMemory $Config.Client.MinMemory `
-        -MaxMemory $Config.Client.MaxMemory `
-        -Processors $Config.Client.Processors `
-        -NetworkAdapter $clientNics `
-        -DomainName $domainName `
-        -OperatingSystem 'Windows 11 Enterprise Evaluation'
-    Install-Lab -NoValidation
-    Write-Status "CLIENT01 deployed: $($Config.Client.IP), $([math]::Round($Config.Client.Memory/1GB))GB RAM"
+    # ── CLIENT01: Deploy now that DC+CM are up (avoids RAM contention during AD/SQL) ──
+    Write-Host "`n--- Deploying CLIENT01 ---" -ForegroundColor White
+    $clientVM = Get-LabVM -ComputerName $Config.Client.Name -ErrorAction SilentlyContinue
+    if ($clientVM -and $clientVM.SkipDeployment) {
+        $clientVM.SkipDeployment = $false
+        Install-Lab -NoValidation
+        Write-Status "CLIENT01 deployed: $($Config.Client.IP)"
+    } elseif (-not $clientVM) {
+        Write-Status 'CLIENT01 not in lab definition — skipping' -Level WARN
+    } else {
+        Write-Status 'CLIENT01 already deployed' -Level SKIP
+    }
 
 } else {
     Write-Status "Lab '$labName' already deployed -- skipping VM creation" -Level SKIP

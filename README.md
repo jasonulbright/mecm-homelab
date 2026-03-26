@@ -69,7 +69,8 @@ All scripts must be run as **Administrator**.
 #   - Client Push Installation (enable, add svc-CMPush account)
 #   - Software Distribution > NAA (add svc-CMNAA account)
 
-# Step 8: Configure Software Update Point (see below)
+# Step 8: Create content share on CM01 (see below)
+# Step 9: Configure Software Update Point (see below)
 ```
 
 ## What Each Script Does
@@ -178,7 +179,31 @@ Complete these steps from the CM console on CM01:
 3. **Create a Boundary Group:** Administration > Hierarchy Configuration > Boundary Groups > Create > Add the boundary above > References tab > add CM01 as site system server
 4. **Enable Client Push:** Administration > Site Configuration > Sites > right-click site > Client Installation Settings > Client Push Installation > Enable > check "Automatically install..."
 
-### Step 8: Software Update Point Setup
+### Step 8: Content Share
+
+A hidden share on CM01 for application content, drivers, images, and packages:
+
+| Detail | Value |
+|--------|-------|
+| UNC Path | `\\CM01\ContentShare$` |
+| Local Path | `E:\ContentShare` (SQL data disk) |
+| Full Access | Domain Admins |
+| Read Access | Domain Computers, svc-CMNAA |
+
+```
+\\CM01\ContentShare$\
+    Applications\       # AppPackager content (Vendor\App\Version)
+    Drivers\
+    Images\
+    OperatingSystems\
+    Packages\
+    Scripts\
+    SoftwareUpdates\
+```
+
+Created automatically by `03-Deploy-Infrastructure.ps1`. Configure ApplicationPackager to use this share: **File > Preferences > File Share Root** = `\\CM01\ContentShare$`
+
+### Step 9: Software Update Point Setup
 
 The SUP role was installed during CM setup (script 04). WSUS is running on CM01. Configure update synchronization:
 
@@ -350,7 +375,8 @@ homelab/
     03-Deploy-Infrastructure.ps1 # AutomatedLab: VMs, AD, CA, SQL
     04-Install-ConfigMgr.ps1     # CM01: ADK, prereqs, CM unattended install
     05-Configure-AD.ps1          # DC01: AD schema extension, System Management container
-    06-Create-ServiceAccounts.ps1# DC01: Client push + NAA service accounts
+    06-Create-ServiceAccounts.ps1# DC01: Client push + NAA + admin service accounts
+    07-Create-ContentShare.ps1   # CM01: Content share for apps, drivers, images
 ```
 
 ## Estimated Timelines
@@ -360,8 +386,8 @@ homelab/
 | Prerequisites + Downloads (01-02) | 15-30 minutes |
 | Infrastructure Deployment (03) | 30-60 minutes |
 | ConfigMgr Installation (04) | 1-3 hours |
-| AD + Service Accounts (05-06) | 2 minutes |
-| Console Configuration (07) | 5-10 minutes |
+| AD + Service Accounts + Share (05-07) | 2 minutes |
+| Console Configuration (08-09) | 5-10 minutes |
 | **Total** | **2-4 hours** |
 
 ## License

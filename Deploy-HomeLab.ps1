@@ -927,43 +927,9 @@ Write-Status "Service accounts created ($($Config.ServiceAccounts.ClientPush.Nam
 Write-Step 'Phase 7: Install Software on CM01'
 
 # ── 7.1 VC++ Runtimes ────────────────────────────────────────────────────────
-
-Write-Host "`n--- VC++ 14.50 Runtimes ---" -ForegroundColor White
-
-Invoke-LabCommand -ComputerName $cmName -ActivityName 'Install VC++ x64' -ScriptBlock {
-    $exe = 'C:\Install\VCRedist\vc_redist.x64.exe'
-    if (Test-Path $exe) {
-        $proc = Start-Process -FilePath $exe -ArgumentList @('/install', '/quiet', '/norestart') -Wait -PassThru
-        if ($proc.ExitCode -eq 0 -or $proc.ExitCode -eq 3010) {
-            Write-Host "VC++ x64 installed (exit code: $($proc.ExitCode))"
-        } else {
-            throw "VC++ x64 install failed with exit code $($proc.ExitCode)"
-        }
-    } else {
-        throw "vc_redist.x64.exe not found at $exe"
-    }
-}
-Write-Status 'VC++ x64 installed'
-
-Invoke-LabCommand -ComputerName $cmName -ActivityName 'Install VC++ x86' -ScriptBlock {
-    $exe = 'C:\Install\VCRedist\vc_redist.x86.exe'
-    if (Test-Path $exe) {
-        $proc = Start-Process -FilePath $exe -ArgumentList @('/install', '/quiet', '/norestart') -Wait -PassThru
-        if ($proc.ExitCode -eq 0 -or $proc.ExitCode -eq 3010) {
-            Write-Host "VC++ x86 installed (exit code: $($proc.ExitCode))"
-        } else {
-            throw "VC++ x86 install failed with exit code $($proc.ExitCode)"
-        }
-    } else {
-        throw "vc_redist.x86.exe not found at $exe"
-    }
-}
-Write-Status 'VC++ x86 installed'
-
-# VC++ returns 3010 (reboot required) — must reboot before ODBC/MSOLEDB will install
-Write-Status 'Rebooting CM01 after VC++ install (exit code 3010)...' -Level RUN
-Restart-LabVM -ComputerName $cmName -Wait
-Write-Status 'CM01 restarted'
+# VC++ latest (14.50) is now installed by AutomatedLab during SQL setup.
+# The vendored fork updated the download URLs from 2015/2017 to latest.
+Write-Status 'VC++ runtimes installed by AutomatedLab during SQL setup' -Level SKIP
 
 # ── 7.2 ODBC Driver ──────────────────────────────────────────────────────────
 
@@ -1090,10 +1056,10 @@ Write-Status 'ADK WinPE add-on installed'
 
 Write-Step 'Phase 8: Install ConfigMgr 2509'
 
-# Reboot CM01 after software installs (VC++, ODBC, ADK) before CM setup
+# Reboot CM01 after ODBC/ADK installs before CM setup
 Write-Status 'Rebooting CM01 before ConfigMgr install...' -Level RUN
 Restart-LabVM -ComputerName $cmName -Wait
-Write-Status 'CM01 restarted and ready'
+Write-Status 'CM01 restarted'
 
 $cmFqdn    = "$cmName.$domainName"
 $adminUser = "$netbios\$($Config.AdminUser)"

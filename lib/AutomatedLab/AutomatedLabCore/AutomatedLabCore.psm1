@@ -1314,6 +1314,7 @@ function Install-CMSite
     $CMSetupConfig['[CloudConnectorOptions]'].CloudConnectorServer = $CMServer.FQDN
     $CMSetupConfig['[SQLConfigOptions]'].SQLServerName = $SqlServerName
     $CMSetupConfig['[SQLConfigOptions]'].DatabaseName = $DatabaseName
+    $CMSetupConfig['[Options]'].PrerequisitePath = $VMCMPreReqsDirectory
 
     if ($CMRoles -contains "Management Point")
     {
@@ -1555,11 +1556,21 @@ function Install-CMSite
     
     #region Install Configuration Manager
     Write-ScreenInfo "Installing Configuration Manager" -TaskStart
-    $exePath = "{0}\SMSSETUP\BIN\X64\setup.exe" -f $VMCMBinariesDirectory
     $iniPath = "C:\Install\ConfigurationFile-CM-$CMServer.ini"
     $cmd = "/Script `"{0}`" /NoUserInput" -f $iniPath
     $timeout = Get-LabConfigurationItem -Name Timeout_ConfigurationManagerInstallation -Default 60
     if ((Get-Lab).DefaultVirtualizationEngine -eq 'Azure') { $timeout = $timeout + 30 }
+
+    # Locate setup.exe: try explicit path first, then recursive search (extracted layout may nest differently)
+    $exePath = Invoke-LabCommand -ComputerName $CMServer -PassThru -Variable (Get-Variable VMCMBinariesDirectory) -ScriptBlock {
+        $explicit = Join-Path $VMCMBinariesDirectory 'SMSSETUP\BIN\X64\setup.exe'
+        if (Test-Path $explicit) { return $explicit }
+        $found = Get-ChildItem -Path $VMCMBinariesDirectory -Filter 'setup.exe' -Recurse -ErrorAction SilentlyContinue |
+            Where-Object { $_.FullName -match 'SMSSETUP\\BIN\\X64\\setup\.exe$' } |
+            Select-Object -First 1
+        if ($found) { return $found.FullName }
+        throw "CM setup.exe not found under $VMCMBinariesDirectory"
+    }
     Install-LabSoftwarePackage -LocalPath $exePath -CommandLine $cmd -ProgressIndicator 10 -ExpectedReturnCodes 0 -ComputerName $CMServer -Timeout $timeout
     Write-ScreenInfo -Message "Activity done" -TaskEnd
     #endregion
@@ -10598,29 +10609,74 @@ function Install-LabConfigurationManager
 
     #region Prereq: ADK, CM binaries, stuff
     Write-ScreenInfo -Message "Installing Prerequisites on $($vms.Count) machines"
-    $adkUrl = Get-LabConfigurationItem -Name WindowsAdk
-    $adkPeUrl = Get-LabConfigurationItem -Name WindowsAdkPe
-    $adkFile = Get-LabInternetFile -Uri $adkUrl -Path $labsources\SoftwarePackages -FileName adk.exe -PassThru -NoDisplay
-    $adkpeFile = Get-LabInternetFile -Uri $adkPeUrl -Path $labsources\SoftwarePackages -FileName adkpe.exe -PassThru -NoDisplay
+
+    # ADK setup: use existing offline layouts if available, otherwise download and create them
+    $adkOfflinePath = Join-Path $labSources 'SoftwarePackages/ADKoffline'
+    $adkPeOfflinePath = Join-Path $labSources 'SoftwarePackages/ADKPEoffline'
+    $adkBootstrapper = Join-Path $labSources 'SoftwarePackages/ADK/adksetup.exe'
+    $adkPeBootstrapper = Join-Path $labSources 'SoftwarePackages/ADKPE/adkwinpesetup.exe'
+
+    # Create offline layouts if they don't exist
+    if (-not (Test-Path (Join-Path $adkOfflinePath 'Installers'))) {
+        Write-ScreenInfo -Message 'Creating ADK offline layout (this may take a few minutes)...'
+        if (-not (Test-Path $adkBootstrapper)) {
+            $adkUrl = Get-LabConfigurationItem -Name WindowsAdk
+            $adkFile = Get-LabInternetFile -Uri $adkUrl -Path "$labSources/SoftwarePackages/ADK" -FileName 'adksetup.exe' -PassThru -NoDisplay
+            $adkBootstrapper = $adkFile.FullName
+        }
+        Start-Process -FilePath $adkBootstrapper -ArgumentList "/quiet /layout `"$adkOfflinePath`"" -Wait -NoNewWindow
+    }
+
+    if (-not (Test-Path (Join-Path $adkPeOfflinePath 'Installers'))) {
+        Write-ScreenInfo -Message 'Creating ADK PE offline layout...'
+        if (-not (Test-Path $adkPeBootstrapper)) {
+            $adkPeUrl = Get-LabConfigurationItem -Name WindowsAdkPe
+            $adkPeFile = Get-LabInternetFile -Uri $adkPeUrl -Path "$labSources/SoftwarePackages/ADKPE" -FileName 'adkwinpesetup.exe' -PassThru -NoDisplay
+            $adkPeBootstrapper = $adkPeFile.FullName
+        }
+        Start-Process -FilePath $adkPeBootstrapper -ArgumentList "/quiet /layout `"$adkPeOfflinePath`"" -Wait -NoNewWindow
+    }
+
+    # Ensure bootstrapper is inside the offline layout folder (needed for VM-side install)
+    if ((Test-Path $adkBootstrapper) -and -not (Test-Path (Join-Path $adkOfflinePath 'adksetup.exe'))) {
+        Copy-Item $adkBootstrapper $adkOfflinePath -Force
+    }
+    if ((Test-Path $adkPeBootstrapper) -and -not (Test-Path (Join-Path $adkPeOfflinePath 'adkwinpesetup.exe'))) {
+        Copy-Item $adkPeBootstrapper $adkPeOfflinePath -Force
+    }
+
+    # Set up VM install directory
     $deployDebugPath = Invoke-LabCommand -ComputerName $vms -ScriptBlock {
         (New-Item -ItemType Directory -Path $ExecutionContext.InvokeCommand.ExpandString($AL_DeployDebugFolder) -ErrorAction SilentlyContinue -Force).FullName
     } -PassThru -Variable (Get-Variable -Name AL_DeployDebugFolder -Scope Global) | Select-Object -First 1
-    
+
+    # Copy layouts to VM
     if ($(Get-Lab).DefaultVirtualizationEngine -eq 'Azure')
     {
-        Install-LabSoftwarePackage -Path $adkFile.FullName -ComputerName $vms -CommandLine "/quiet /layout `"$deployDebugPath\ADKoffline`"" -NoDisplay
-        Install-LabSoftwarePackage -Path $adkpeFile.FullName -ComputerName $vms -CommandLine "/quiet /layout `"$deployDebugPath\ADKPEoffline`"" -NoDisplay
+        Install-LabSoftwarePackage -Path (Join-Path $adkOfflinePath 'adksetup.exe') -ComputerName $vms -CommandLine "/quiet /layout `"$deployDebugPath\ADKoffline`"" -NoDisplay
+        Install-LabSoftwarePackage -Path (Join-Path $adkPeOfflinePath 'adkwinpesetup.exe') -ComputerName $vms -CommandLine "/quiet /layout `"$deployDebugPath\ADKPEoffline`"" -NoDisplay
     }
     else
     {
-        Start-Process -FilePath $adkFile.FullName -ArgumentList "/quiet /layout $($ExecutionContext.SessionState.Path.Combine($labSources, 'SoftwarePackages/ADKoffline'))" -Wait -NoNewWindow
-        Start-Process -FilePath $adkpeFile.FullName -ArgumentList " /quiet /layout $($ExecutionContext.SessionState.Path.Combine($labSources, 'SoftwarePackages/ADKPEoffline'))" -Wait -NoNewWindow
-        Copy-LabFileItem -Path ($ExecutionContext.SessionState.Path.Combine($labSources, 'SoftwarePackages/ADKoffline')) -ComputerName $vms
-        Copy-LabFileItem -Path ($ExecutionContext.SessionState.Path.Combine($labSources, 'SoftwarePackages/ADKPEoffline')) -ComputerName $vms
+        Copy-LabFileItem -Path $adkOfflinePath -ComputerName $vms -DestinationFolderPath $deployDebugPath -Recurse
+        Copy-LabFileItem -Path $adkPeOfflinePath -ComputerName $vms -DestinationFolderPath $deployDebugPath -Recurse
+
+        # Flatten nested folders from Copy-LabFileItem
+        Invoke-LabCommand -ComputerName $vms -ActivityName 'Flatten ADK folders' -ScriptBlock {
+            param($basePath)
+            foreach ($name in @('ADKoffline', 'ADKPEoffline')) {
+                $target = Join-Path $basePath $name
+                $nested = Join-Path $target $name
+                if (Test-Path $nested) {
+                    Get-ChildItem $nested | Copy-Item -Destination $target -Recurse -Force
+                    Remove-Item $nested -Recurse -Force -ErrorAction SilentlyContinue
+                }
+            }
+        } -ArgumentList $deployDebugPath
     }
-    
-    Install-LabSoftwarePackage -LocalPath $deployDebugPath\ADKOffline\adksetup.exe -ComputerName $vms -CommandLine '/norestart /q /ceip off /features OptionId.DeploymentTools OptionId.UserStateMigrationTool OptionId.ImagingAndConfigurationDesigner' -NoDisplay
-    Install-LabSoftwarePackage -LocalPath $deployDebugPath\ADKPEOffline\adkwinpesetup.exe -ComputerName $vms -CommandLine '/norestart /q /ceip off /features OptionId.WindowsPreinstallationEnvironment' -NoDisplay
+
+    Install-LabSoftwarePackage -LocalPath "$deployDebugPath\ADKoffline\adksetup.exe" -ComputerName $vms -CommandLine '/quiet /norestart /ceip off /features OptionId.DeploymentTools OptionId.UserStateMigrationTool' -NoDisplay
+    Install-LabSoftwarePackage -LocalPath "$deployDebugPath\ADKPEoffline\adkwinpesetup.exe" -ComputerName $vms -CommandLine '/quiet /norestart /ceip off /features OptionId.WindowsPreinstallationEnvironment' -NoDisplay
 
     $ncliUrl = Get-LabConfigurationItem -Name SqlServerNativeClient2012
     try
@@ -10647,9 +10703,24 @@ function Install-LabConfigurationManager
     }
     Install-LabSoftwarePackage -Path $vcx64 -ComputerName $vms -CommandLine '/quiet /norestart' -ExpectedReturnCodes 0, 3010
     Install-LabSoftwarePackage -Path $vcx86 -ComputerName $vms -CommandLine '/quiet /norestart' -ExpectedReturnCodes 0, 3010
+
+    # VC++ returns 3010 (reboot required) which blocks subsequent MSI installs
+    Write-ScreenInfo -Message 'Restarting VMs after VC++ install (3010 reboot pending)'
+    Restart-LabVM -ComputerName $vms -Wait
     #endregion
 
-    #region ODBC Driver 18.5.x (required by CM 2509+, NOT 18.6.x)
+    #region MSOLEDB 19 (required by CM 2509+)
+    Write-ScreenInfo -Message 'Installing MSOLEDB 19'
+    $msoledbMsi = Join-Path $labSources 'SoftwarePackages/MSOLEDB/msoledbsql.msi'
+    if (-not (Test-Path $msoledbMsi)) {
+        Write-ScreenInfo -Message 'Downloading MSOLEDB 19...'
+        $msoledbMsi = (Get-LabInternetFile -Uri 'https://go.microsoft.com/fwlink/?linkid=2277846' -Path "$labSources/SoftwarePackages/MSOLEDB" -FileName 'msoledbsql.msi' -PassThru -ErrorAction Stop).FullName
+    }
+    # 1603 is non-fatal: means an older version was already installed by SQL setup; CM setup handles the upgrade from its prereqs
+    Install-LabSoftwarePackage -Path $msoledbMsi -ComputerName $vms -CommandLine '/qn /norestart IACCEPTMSOLEDBSQLLICENSETERMS=YES' -ExpectedReturnCodes 0, 3010, 1603
+    #endregion
+
+    #region ODBC Driver 18.5.x (required by CM 2509+, NOT 18.6.x which has NULL regression)
     Write-ScreenInfo -Message 'Installing ODBC Driver 18.5.x'
     $odbcMsi = Join-Path $labSources 'SoftwarePackages/ODBC/msodbcsql.msi'
     if (-not (Test-Path $odbcMsi)) {
@@ -10705,42 +10776,40 @@ function Install-LabConfigurationManager
             Write-ScreenInfo -Message "Using local CM source: $cmLocalSource"
             $CMBinariesDirectory = $cmLocalSource
         }
-        elseif (-not $cmLocalSource)
+        elseif ($cmDownloadUrl)
         {
-            # Auto-detect CM source in SoftwarePackages\CM\
+            #region CM binaries download
+            $CMZipPath = "{0}\SoftwarePackages\{1}" -f $labsources, ((Split-Path $CMDownloadURL -Leaf) -replace "\.exe$", ".zip")
+
+            try
+            {
+                $CMZipObj = Get-LabInternetFile -Uri $CMDownloadURL -Path (Split-Path -Path $CMZipPath -Parent) -FileName (Split-Path -Path $CMZipPath -Leaf) -PassThru -ErrorAction "Stop" -ErrorVariable "GetLabInternetFileErr"
+            }
+            catch
+            {
+                $Message = "Failed to download from '{0}' ({1})" -f $CMDownloadURL, $GetLabInternetFileErr.ErrorRecord.Exception.Message
+                Write-LogFunctionExitWithError -Message $Message
+            }
+            #endregion
+        }
+        else
+        {
+            # Check if CM source exists in standard SoftwarePackages location
             $autoDetect = Get-ChildItem "$labSources\SoftwarePackages\CM" -Directory -ErrorAction SilentlyContinue |
                 Where-Object { Test-Path (Join-Path $_.FullName 'SMSSETUP\BIN\X64\setup.exe') } |
                 Select-Object -First 1
-            if ($autoDetect) {
+            if ($autoDetect)
+            {
                 Write-ScreenInfo -Message "Auto-detected CM source: $($autoDetect.FullName)"
                 $CMBinariesDirectory = $autoDetect.FullName
             }
-        }
-
-        if (-not (Test-Path "$CMBinariesDirectory\SMSSETUP\BIN\X64\setup.exe"))
-        {
-            if ($cmDownloadUrl)
-            {
-                #region CM binaries download
-                $CMZipPath = "{0}\SoftwarePackages\{1}" -f $labsources, ((Split-Path $CMDownloadURL -Leaf) -replace "\.exe$", ".zip")
-                try
-                {
-                    $CMZipObj = Get-LabInternetFile -Uri $CMDownloadURL -Path (Split-Path -Path $CMZipPath -Parent) -FileName (Split-Path -Path $CMZipPath -Leaf) -PassThru -ErrorAction "Stop" -ErrorVariable "GetLabInternetFileErr"
-                }
-                catch
-                {
-                    $Message = "Failed to download from '{0}' ({1})" -f $CMDownloadURL, $GetLabInternetFileErr.ErrorRecord.Exception.Message
-                    Write-LogFunctionExitWithError -Message $Message
-                }
-                #endregion
-            }
             else
             {
-                Write-LogFunctionExitWithError -Message "No CM source found. Place extracted CM baseline in $labSources\SoftwarePackages\CM\ or set ConfigurationManagerLocalSource."
+                Write-LogFunctionExitWithError -Message "No URI configuration for CM version $cmVersion, branch $cmBranch, and no local source found in $labSources\SoftwarePackages\CM\"
             }
         }
 
-        #region Copy/Extract CM binaries to VM
+        #region Extract CM binaries (only if downloaded, not local)
         if ($CMZipObj)
         {
             try
@@ -10874,7 +10943,7 @@ function Install-LabConfigurationManager
         }
         else
         {
-            $sql = (Get-LabVM -Role SQLServer2014, SQLServer2016, SQLServer2017, SQLServer2019 | Select-Object -First 1).Fqdn
+            $sql = (Get-LabVM -Role SQLServer2014, SQLServer2016, SQLServer2017, SQLServer2019, SQLServer2022 | Select-Object -First 1).Fqdn
 
             if (-not $sql)
             {

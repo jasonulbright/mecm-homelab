@@ -480,6 +480,7 @@ if (-not $labImported) {
     Add-LabMachineDefinition -Name $Config.DC.Name `
         -Roles $dcRoles `
         -Memory $Config.DC.Memory `
+        -MinMemory $Config.DC.MinMemory `
         -MaxMemory $Config.DC.MaxMemory `
         -Processors $Config.DC.Processors `
         -NetworkAdapter $dcNics `
@@ -507,6 +508,7 @@ if (-not $labImported) {
     Add-LabMachineDefinition -Name $Config.CM.Name `
         -Roles $sqlRole `
         -Memory $Config.CM.Memory `
+        -MinMemory $Config.CM.MinMemory `
         -MaxMemory $Config.CM.MaxMemory `
         -Processors $Config.CM.Processors `
         -DiskName 'CM01-SQL', 'CM01-Data' `
@@ -526,6 +528,7 @@ if (-not $labImported) {
 
     Add-LabMachineDefinition -Name $Config.Client.Name `
         -Memory $Config.Client.Memory `
+        -MinMemory $Config.Client.MinMemory `
         -MaxMemory $Config.Client.MaxMemory `
         -Processors $Config.Client.Processors `
         -NetworkAdapter $clientNics `

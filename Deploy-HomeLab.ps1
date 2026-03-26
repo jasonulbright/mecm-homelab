@@ -518,27 +518,10 @@ if (-not $labImported) {
 
     Write-Status "CM01 defined: $($Config.CM.IP), $([math]::Round($Config.CM.Memory/1GB))GB RAM, $($Config.CM.Processors) vCPU"
 
-    # ── CLIENT01 ──
-    Write-Host "`n--- Defining CLIENT01 ---" -ForegroundColor White
+    # CLIENT01 is added AFTER DC01+CM01 are built (avoids RAM contention during AD/SQL install)
 
-    $clientNics = @(
-        New-LabNetworkAdapterDefinition -VirtualSwitch $networkName -Ipv4Address "$($Config.Client.IP)/24" -Ipv4DNSServers $Config.DC.IP
-        New-LabNetworkAdapterDefinition -VirtualSwitch 'Default Switch' -UseDhcp
-    )
-
-    Add-LabMachineDefinition -Name $Config.Client.Name `
-        -Memory $Config.Client.Memory `
-        -MinMemory $Config.Client.MinMemory `
-        -MaxMemory $Config.Client.MaxMemory `
-        -Processors $Config.Client.Processors `
-        -NetworkAdapter $clientNics `
-        -DomainName $domainName `
-        -OperatingSystem 'Windows 11 Enterprise Evaluation'
-
-    Write-Status "CLIENT01 defined: $($Config.Client.IP), $([math]::Round($Config.Client.Memory/1GB))GB RAM, $($Config.Client.Processors) vCPU"
-
-    # ── Install Lab ──
-    Write-Host "`n--- Installing Lab (this will take 30-60 minutes) ---" -ForegroundColor White
+    # ── Install Lab (DC01 + CM01 only) ──
+    Write-Host "`n--- Installing Lab - DC01 + CM01 (this will take 30-60 minutes) ---" -ForegroundColor White
     Write-Host "  Started at: $(Get-Date -Format 'HH:mm:ss')" -ForegroundColor DarkGray
 
     try {
@@ -557,8 +540,26 @@ if (-not $labImported) {
         }
     }
 
-    Write-Status 'Lab VMs deployed and domain joined'
+    Write-Status 'DC01 + CM01 deployed and domain joined'
     Write-Host "  Finished at: $(Get-Date -Format 'HH:mm:ss')" -ForegroundColor DarkGray
+
+    # ── CLIENT01: Add after infrastructure is up (avoids RAM contention) ──
+    Write-Host "`n--- Adding CLIENT01 ---" -ForegroundColor White
+    $clientNics = @(
+        New-LabNetworkAdapterDefinition -VirtualSwitch $networkName -Ipv4Address "$($Config.Client.IP)/24" -Ipv4DNSServers $Config.DC.IP
+        New-LabNetworkAdapterDefinition -VirtualSwitch 'Default Switch' -UseDhcp
+    )
+    Add-LabMachineDefinition -Name $Config.Client.Name `
+        -Memory $Config.Client.Memory `
+        -MinMemory $Config.Client.MinMemory `
+        -MaxMemory $Config.Client.MaxMemory `
+        -Processors $Config.Client.Processors `
+        -NetworkAdapter $clientNics `
+        -DomainName $domainName `
+        -OperatingSystem 'Windows 11 Enterprise Evaluation'
+    Install-Lab -NoValidation
+    Write-Status "CLIENT01 deployed: $($Config.Client.IP), $([math]::Round($Config.Client.Memory/1GB))GB RAM"
+
 } else {
     Write-Status "Lab '$labName' already deployed -- skipping VM creation" -Level SKIP
 }

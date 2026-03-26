@@ -1,0 +1,49 @@
+﻿function Set-UnattendedCloudInitDomain
+{
+	[CmdletBinding()]
+	param (
+		[Parameter(Mandatory = $true)]
+		[string]$DomainName,
+
+		[Parameter(Mandatory = $true)]
+		[string]$Username,
+
+		[Parameter(Mandatory = $true)]
+		[string]$Password,
+
+		[Parameter()]
+		[string]$OrganizationalUnit
+	)
+
+	if ($script:un['autoinstall']['user-data']['hostname'])
+	{
+		$script:un['autoinstall']['user-data']['fqdn'] = '{0}.{1}' -f $script:un['autoinstall']['user-data']['hostname'].ToLower(), $DomainName
+	}
+	
+	$script:un['autoinstall']['user-data']['write_files'] += @{
+		append  = $false
+		path    = '/etc/cron.d/00realmjoin'
+		content = if ($OrganizationalUnit)
+		{
+			"@reboot root echo '{0}' | realm join --computer-ou='{2}' -U {3} {1}`n@reboot root pam-auth-update --enable mkhomedir`n" -f $Password, $DomainName, $OrganizationalUnit, $UserName
+		}
+		else
+		{
+			"@reboot root echo '{0}' | realm join -U {2} {1}`n@reboot root pam-auth-update --enable mkhomedir`n" -f $Password, $DomainName, $UserName
+		}
+	}
+	$script:un['autoinstall']['user-data']['write_files'] += @{
+		append  = $false
+		path    = '/etc/sudoers.d/domainadmins'
+		content = @"
+# Allow Domain Admins
+%Domain\ Admins@$($DomainName.ToUpper()) ALL=(ALL:ALL) NOPASSWD:ALL
+
+"@
+	}
+	$script:un['autoinstall']['user-data']['write_files'] += @{
+		append  = $false
+		path    = '/etc/cron.d/99realmjoin'
+		content = "@reboot root rm -rf /etc/cron.d/00realmjoin`n"
+	}
+}

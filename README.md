@@ -1,6 +1,6 @@
 # MECM Home Lab Deployment
 
-Automated deployment of a Microsoft Endpoint Configuration Manager (MECM) home lab using [AutomatedLab](https://automatedlab.org/) and Hyper-V.
+Automated deployment of a Microsoft Endpoint Configuration Manager (MECM) home lab using a [vendored fork of AutomatedLab](https://github.com/jasonulbright/AutomatedLab) and Hyper-V. No external dependencies — everything is self-contained.
 
 Deploys a fully functional ConfigMgr 2509 primary site with Windows Server 2025, SQL Server 2022, Active Directory, and Certificate Services.
 

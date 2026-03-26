@@ -53,22 +53,31 @@ if ($hv.State -ne 'Enabled') {
 }
 Write-Status 'Hyper-V enabled'
 
-# ── 2. AutomatedLab module ──────────────────────────────────────────────────
+# ── 2. AutomatedLab module (vendored) ────────────────────────────────────────
 
 Write-Host "`n=== Step 2: AutomatedLab ===" -ForegroundColor Cyan
+
+$vendoredAL = Join-Path $PSScriptRoot 'lib\AutomatedLab'
+$moduleDirs = Get-ChildItem $vendoredAL -Directory | Where-Object { Test-Path (Join-Path $_.FullName '*.psd1') }
+
+# Install vendored modules to PSModulePath if not already there
+$targetPath = Join-Path $env:ProgramFiles 'WindowsPowerShell\Modules'
+foreach ($mod in $moduleDirs) {
+    $dest = Join-Path $targetPath $mod.Name
+    if (-not (Test-Path $dest)) {
+        Copy-Item $mod.FullName $dest -Recurse -Force
+        Write-Status "Installed: $($mod.Name)" -Level INFO
+    }
+}
 
 $al = Get-Module AutomatedLab -ListAvailable |
     Sort-Object Version -Descending |
     Select-Object -First 1
 
 if (-not $al) {
-    Write-Host "  Installing AutomatedLab from PSGallery..." -ForegroundColor Yellow
-    Install-Module AutomatedLab -AllowClobber -SkipPublisherCheck -Force
-    $al = Get-Module AutomatedLab -ListAvailable |
-        Sort-Object Version -Descending |
-        Select-Object -First 1
+    throw "AutomatedLab module not found after vendored install. Check lib\AutomatedLab\"
 }
-Write-Status "AutomatedLab v$($al.Version)"
+Write-Status "AutomatedLab v$($al.Version) (vendored fork)"
 
 # ── 3. LabSources folder ────────────────────────────────────────────────────
 

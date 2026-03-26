@@ -152,6 +152,7 @@ Creates the following service accounts in `OU=Service Accounts,DC=contoso,DC=com
 |---------|----------|---------|-------------|
 | `CONTOSO\svc-CMPush` | `P@ssw0rd!Push1` | Client Push Installation | Domain Admins (local admin on all domain PCs) |
 | `CONTOSO\svc-CMNAA` | `P@ssw0rd!NAA1` | Network Access Account | Domain Users only (least privilege) |
+| `CONTOSO\svc-CMAdmin` | `P@ssw0rd!Admin1` | MECM admin, cc4cm, RDP | Domain Admins + Remote Desktop Users |
 
 After running the script, configure these in the MECM console:
 
@@ -160,6 +161,9 @@ Administration > Site Configuration > Sites > right-click site > Client Installa
 
 **Network Access Account:**
 Administration > Site Configuration > Sites > right-click site > Configure Site Components > Software Distribution > Network Access Account tab > Add `CONTOSO\svc-CMNAA`
+
+**Admin Account (`svc-CMAdmin`):**
+Use this account to RDP into any lab VM (CM01, DC01, CLIENT01) and run tools like the CM console or Client Center (cc4cm). No console configuration needed — Domain Admins membership provides full MECM and WinRM access.
 
 > **Note:** The NAA test connection may show "access denied" on C$ — this is expected. NAA only needs read access to the DP content share, not admin shares. It is intentionally least-privilege.
 

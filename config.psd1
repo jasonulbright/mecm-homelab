@@ -30,6 +30,21 @@
         MaxMemory  = 4GB
         Processors = 2
     }
+    # Service accounts
+    ServiceAccounts = @{
+        ClientPush = @{
+            Name     = 'svc-CMPush'
+            Password = 'P@ssw0rd!Push1'
+            Desc     = 'MECM Client Push Installation Account'
+            Group    = 'Domain Admins'  # Needs local admin on all targets
+        }
+        NAA = @{
+            Name     = 'svc-CMNAA'
+            Password = 'P@ssw0rd!NAA1'
+            Desc     = 'MECM Network Access Account'
+            Group    = $null  # Domain Users only — least privilege
+        }
+    }
     # Software versions
     ODBCVersion    = '18.5.2.1'
     ODBCURL        = 'https://go.microsoft.com/fwlink/?linkid=2335671'

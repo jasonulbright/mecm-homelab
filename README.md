@@ -119,6 +119,46 @@ Edit `config.psd1` before running the scripts to customize your lab.
 
 ## After Deployment
 
+### Step 5: Configure AD for ConfigMgr
+
+```powershell
+.\05-Configure-AD.ps1
+```
+
+Extends the Active Directory schema for ConfigMgr (adds SMS classes) and creates the System Management container with Full Control for the CM01 computer account. This allows the site server to publish site information to AD.
+
+### Step 6: Create Service Accounts
+
+```powershell
+.\06-Create-ServiceAccounts.ps1
+```
+
+Creates the following service accounts in `OU=Service Accounts,DC=contoso,DC=com`:
+
+| Account | Password | Purpose | Permissions |
+|---------|----------|---------|-------------|
+| `CONTOSO\svc-CMPush` | `P@ssw0rd!Push1` | Client Push Installation | Domain Admins (local admin on all domain PCs) |
+| `CONTOSO\svc-CMNAA` | `P@ssw0rd!NAA1` | Network Access Account | Domain Users only (least privilege) |
+
+After running the script, configure these in the MECM console:
+
+**Client Push Account:**
+Administration > Site Configuration > Sites > right-click site > Client Installation Settings > Client Push Installation > Accounts tab > Add `CONTOSO\svc-CMPush`
+
+**Network Access Account:**
+Administration > Site Configuration > Sites > right-click site > Configure Site Components > Software Distribution > Network Access Account tab > Add `CONTOSO\svc-CMNAA`
+
+> **Note:** The NAA test connection may show "access denied" on C$ — this is expected. NAA only needs read access to the DP content share, not admin shares. It is intentionally least-privilege.
+
+### Step 7: Console Configuration
+
+Complete these steps from the CM console on CM01:
+
+1. **Enable Active Directory Forest Discovery:** Administration > Hierarchy Configuration > Discovery Methods > Active Directory Forest Discovery > Enable
+2. **Create a Boundary:** Administration > Hierarchy Configuration > Boundaries > Create Boundary > Type: IP Subnet > `192.168.50.0/24`
+3. **Create a Boundary Group:** Administration > Hierarchy Configuration > Boundary Groups > Create > Add the boundary above > References tab > add CM01 as site system server
+4. **Enable Client Push:** Administration > Site Configuration > Sites > right-click site > Client Installation Settings > Client Push Installation > Enable > check "Automatically install..."
+
 ### Connect to the CM Console
 
 ```powershell
@@ -243,6 +283,8 @@ homelab/
     02-Download-Offline.ps1      # Host: ADK layouts, CM prereqs, runtimes
     03-Deploy-Infrastructure.ps1 # AutomatedLab: VMs, AD, CA, SQL
     04-Install-ConfigMgr.ps1     # CM01: ADK, prereqs, CM unattended install
+    05-Configure-AD.ps1          # DC01: AD schema extension, System Management container
+    06-Create-ServiceAccounts.ps1# DC01: Client push + NAA service accounts
 ```
 
 ## Estimated Timelines

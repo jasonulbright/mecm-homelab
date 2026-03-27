@@ -10768,7 +10768,7 @@ function Install-LabConfigurationManager
         $cmVersion = if ($role.Properties.ContainsKey('Version')) { $role.Properties.Version } else { '2103' }
         $cmBranch = if ($role.Properties.ContainsKey('Branch')) { $role.Properties.Branch } else { 'CB' }
 
-        $VMInstallDirectory = "$deployDebugPath\Install"
+        $VMInstallDirectory = "{0}\Install" -f [string]$deployDebugPath
         $CMBinariesDirectory = "$labSources\SoftwarePackages\CM-$($cmVersion)-$cmBranch"
         $CMPreReqsDirectory = "$labSources\SoftwarePackages\CM-Prereqs-$($cmVersion)-$cmBranch"
         $VMCMBinariesDirectory = "{0}\CM" -f $VMInstallDirectory

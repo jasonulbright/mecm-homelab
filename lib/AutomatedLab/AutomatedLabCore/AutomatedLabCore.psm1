@@ -10694,46 +10694,58 @@ function Install-LabConfigurationManager
 
     Install-LabSoftwarePackage -Path $ncli.FullName -ComputerName $vms -CommandLine "/qn /norestart IAcceptSqlncliLicenseTerms=Yes" -ExpectedReturnCodes 0
 
-    #region VC++ 14.50 runtimes (required by MSOLEDB 19)
-    Write-ScreenInfo -Message 'Installing VC++ runtimes (14.50+)'
-    $vcx64 = Join-Path $labSources 'SoftwarePackages/VCRedist/vc_redist.x64.exe'
-    $vcx86 = Join-Path $labSources 'SoftwarePackages/VCRedist/vc_redist.x86.exe'
-    if (-not (Test-Path $vcx64)) {
-        $vcx64 = (Get-LabInternetFile -Uri 'https://aka.ms/vs/18/release/vc_redist.x64.exe' -Path "$labSources/SoftwarePackages/VCRedist" -FileName 'vc_redist.x64.exe' -PassThru -ErrorAction Stop).FullName
+    #region VC++, MSOLEDB, ODBC — skip if already installed (SQL setup installs these as prereqs)
+    $prereqStatus = Invoke-LabCommand -ComputerName ($vms | Select-Object -First 1) -PassThru -ScriptBlock {
+        $vcInstalled = (Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\VisualStudio\14.0\VC\Runtimes\X64' -ErrorAction SilentlyContinue).Installed -eq 1
+        $odbcInstalled = $null -ne (Get-ItemProperty 'HKLM:\SOFTWARE\ODBC\ODBCINST.INI\ODBC Driver 18 for SQL Server' -ErrorAction SilentlyContinue)
+        $oledbInstalled = $null -ne (Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\MSOLEDBSQL' -ErrorAction SilentlyContinue)
+        @{ VC = $vcInstalled; ODBC = $odbcInstalled; OLEDB = $oledbInstalled }
     }
-    if (-not (Test-Path $vcx86)) {
-        $vcx86 = (Get-LabInternetFile -Uri 'https://aka.ms/vs/18/release/vc_redist.x86.exe' -Path "$labSources/SoftwarePackages/VCRedist" -FileName 'vc_redist.x86.exe' -PassThru -ErrorAction Stop).FullName
-    }
-    Install-LabSoftwarePackage -Path $vcx64 -ComputerName $vms -CommandLine '/quiet /norestart' -ExpectedReturnCodes 0, 3010
-    Install-LabSoftwarePackage -Path $vcx86 -ComputerName $vms -CommandLine '/quiet /norestart' -ExpectedReturnCodes 0, 3010
 
-    # VC++ returns 3010 (reboot required) which blocks subsequent MSI installs
-    Write-ScreenInfo -Message 'Restarting VMs after VC++ install (3010 reboot pending)'
-    Restart-LabVM -ComputerName $vms -Wait
-    #endregion
-
-    #region MSOLEDB 19 (required by CM 2509+)
-    Write-ScreenInfo -Message 'Installing MSOLEDB 19'
-    $msoledbMsi = Join-Path $labSources 'SoftwarePackages/MSOLEDB/msoledbsql.msi'
-    try {
-        if (-not (Test-Path $msoledbMsi)) {
-            Write-ScreenInfo -Message 'Downloading MSOLEDB 19...'
-            $msoledbMsi = (Get-LabInternetFile -Uri 'https://go.microsoft.com/fwlink/?linkid=2277846' -Path "$labSources/SoftwarePackages/MSOLEDB" -FileName 'msoledbsql.msi' -PassThru -ErrorAction Stop).FullName
+    if ($prereqStatus.VC) {
+        Write-ScreenInfo -Message 'VC++ runtimes already installed (by SQL setup) -- skipping'
+    } else {
+        Write-ScreenInfo -Message 'Installing VC++ runtimes (14.50+)'
+        $vcx64 = Join-Path $labSources 'SoftwarePackages/VCRedist/vc_redist.x64.exe'
+        $vcx86 = Join-Path $labSources 'SoftwarePackages/VCRedist/vc_redist.x86.exe'
+        if (-not (Test-Path $vcx64)) {
+            $vcx64 = (Get-LabInternetFile -Uri 'https://aka.ms/vs/18/release/vc_redist.x64.exe' -Path "$labSources/SoftwarePackages/VCRedist" -FileName 'vc_redist.x64.exe' -PassThru -ErrorAction Stop).FullName
         }
-        Install-LabSoftwarePackage -Path $msoledbMsi -ComputerName $vms -CommandLine '/qn /norestart IACCEPTMSOLEDBSQLLICENSETERMS=YES' -ExpectedReturnCodes 0, 3010, 1603
+        if (-not (Test-Path $vcx86)) {
+            $vcx86 = (Get-LabInternetFile -Uri 'https://aka.ms/vs/18/release/vc_redist.x86.exe' -Path "$labSources/SoftwarePackages/VCRedist" -FileName 'vc_redist.x86.exe' -PassThru -ErrorAction Stop).FullName
+        }
+        Install-LabSoftwarePackage -Path $vcx64 -ComputerName $vms -CommandLine '/quiet /norestart' -ExpectedReturnCodes 0, 3010
+        Install-LabSoftwarePackage -Path $vcx86 -ComputerName $vms -CommandLine '/quiet /norestart' -ExpectedReturnCodes 0, 3010
+        Write-ScreenInfo -Message 'Restarting VMs after VC++ install (3010 reboot pending)'
+        Restart-LabVM -ComputerName $vms -Wait
     }
-    catch {
-        Write-ScreenInfo -Message "MSOLEDB install failed: $($_.Exception.Message). SQL setup installs a baseline version; CM setup handles upgrade from prereqs." -Type Warning
-    }
-    #endregion
 
-    #region ODBC Driver 18.5.x (required by CM 2509+, NOT 18.6.x which has NULL regression)
-    Write-ScreenInfo -Message 'Installing ODBC Driver 18.5.x'
-    $odbcMsi = Join-Path $labSources 'SoftwarePackages/ODBC/msodbcsql.msi'
-    if (-not (Test-Path $odbcMsi)) {
-        $odbcMsi = (Get-LabInternetFile -Uri 'https://go.microsoft.com/fwlink/?linkid=2335671' -Path "$labSources/SoftwarePackages/ODBC" -FileName 'msodbcsql.msi' -PassThru -ErrorAction Stop).FullName
+    if ($prereqStatus.OLEDB) {
+        Write-ScreenInfo -Message 'MSOLEDB already installed (by SQL setup) -- skipping'
+    } else {
+        Write-ScreenInfo -Message 'Installing MSOLEDB 19'
+        $msoledbMsi = Join-Path $labSources 'SoftwarePackages/MSOLEDB/msoledbsql.msi'
+        try {
+            if (-not (Test-Path $msoledbMsi)) {
+                $msoledbMsi = (Get-LabInternetFile -Uri 'https://go.microsoft.com/fwlink/?linkid=2277846' -Path "$labSources/SoftwarePackages/MSOLEDB" -FileName 'msoledbsql.msi' -PassThru -ErrorAction Stop).FullName
+            }
+            Install-LabSoftwarePackage -Path $msoledbMsi -ComputerName $vms -CommandLine '/qn /norestart IACCEPTMSOLEDBSQLLICENSETERMS=YES' -ExpectedReturnCodes 0, 3010, 1603
+        }
+        catch {
+            Write-ScreenInfo -Message "MSOLEDB install failed: $($_.Exception.Message). CM setup handles upgrade from prereqs." -Type Warning
+        }
     }
-    Install-LabSoftwarePackage -Path $odbcMsi -ComputerName $vms -CommandLine '/qn /norestart IACCEPTMSODBCSQLLICENSETERMS=YES' -ExpectedReturnCodes 0, 3010
+
+    if ($prereqStatus.ODBC) {
+        Write-ScreenInfo -Message 'ODBC Driver already installed (by SQL setup) -- skipping'
+    } else {
+        Write-ScreenInfo -Message 'Installing ODBC Driver 18.5.x'
+        $odbcMsi = Join-Path $labSources 'SoftwarePackages/ODBC/msodbcsql.msi'
+        if (-not (Test-Path $odbcMsi)) {
+            $odbcMsi = (Get-LabInternetFile -Uri 'https://go.microsoft.com/fwlink/?linkid=2335671' -Path "$labSources/SoftwarePackages/ODBC" -FileName 'msodbcsql.msi' -PassThru -ErrorAction Stop).FullName
+        }
+        Install-LabSoftwarePackage -Path $odbcMsi -ComputerName $vms -CommandLine '/qn /norestart IACCEPTMSODBCSQLLICENSETERMS=YES' -ExpectedReturnCodes 0, 3010
+    }
     #endregion
 
     $WMIv2Zip = "{0}\WmiExplorer.zip" -f (Get-LabSourcesLocation -Local)

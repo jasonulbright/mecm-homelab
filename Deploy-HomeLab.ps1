@@ -496,8 +496,19 @@ if (-not $labImported) {
         }
     }
 
-    Write-Status 'DC01 + CM01 deployed (AD, SQL, ConfigMgr installed by AutomatedLab)'
+    Write-Status 'DC01 + CM01 deployed'
     Write-Host "  Finished at: $(Get-Date -Format 'HH:mm:ss')" -ForegroundColor DarkGray
+
+    # Validate CM is actually installed — Install-Lab may have caught a CM error and continued
+    $cmInstalled = Invoke-LabCommand -ComputerName $Config.CM.Name -PassThru -ScriptBlock {
+        (Get-Service SMS_EXECUTIVE -ErrorAction SilentlyContinue).Status -eq 'Running'
+    }
+    if (-not $cmInstalled -or $cmInstalled -ne $true) {
+        Write-Status 'ConfigMgr not detected — retrying Install-LabConfigurationManager...' -Level WARN
+        Install-LabConfigurationManager
+    } else {
+        Write-Status 'ConfigMgr verified: SMS_EXECUTIVE running' -Level OK
+    }
 
     # ── CLIENT01: Deploy now that DC+CM are up (avoids RAM contention during AD/SQL) ──
     Write-Host "`n--- Deploying CLIENT01 ---" -ForegroundColor White
@@ -514,6 +525,18 @@ if (-not $labImported) {
 
 } else {
     Write-Status "Lab '$labName' already deployed -- skipping VM creation" -Level SKIP
+
+    # Even if lab exists, CM may not be installed (previous run may have failed during CM setup)
+    Import-Lab -Name $labName -NoValidation
+    $cmInstalled = Invoke-LabCommand -ComputerName $Config.CM.Name -PassThru -ScriptBlock {
+        (Get-Service SMS_EXECUTIVE -ErrorAction SilentlyContinue).Status -eq 'Running'
+    }
+    if (-not $cmInstalled -or $cmInstalled -ne $true) {
+        Write-Status 'ConfigMgr not detected — running Install-LabConfigurationManager...' -Level WARN
+        Install-LabConfigurationManager
+    } else {
+        Write-Status 'ConfigMgr verified: SMS_EXECUTIVE running' -Level OK
+    }
 }
 
 # ── 3.3 Expand CM01 OS disk ──────────────────────────────────────────────────

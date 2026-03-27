@@ -171,12 +171,12 @@ homelab/
 
 | Phase | Duration |
 |-------|----------|
-| Prerequisites + Downloads | 15-30 minutes |
-| Lab Deployment (DC + CM + SQL + ConfigMgr) | 1-3 hours |
+| Prerequisites + Downloads | 10-15 minutes |
+| Lab Deployment (DC + SQL + CM install) | 45-60 minutes |
 | Service Accounts + Content Share + Tools | 5 minutes |
 | CLIENT01 Deployment | 10-15 minutes |
 | Console Configuration (manual) | 5-10 minutes |
-| **Total** | **2-4 hours** |
+| **Total** | **~1.5 hours** (observed on Intel Ultra 7 265K, 32GB RAM, NVMe) |
 
 ## License
 

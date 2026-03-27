@@ -1384,7 +1384,6 @@ function Install-CMSite
             throw $ReceiveJobErr
         }
     }
-    Write-ScreenInfo -Message "Activity done" -TaskEnd
 
     if ($InstalledSite.SiteCode -eq $CMSiteCode)
     {
@@ -1629,7 +1628,7 @@ function Install-CMSite
     Write-ScreenInfo -Message "Configuring Distribution Point group" -TaskStart
     if ($CMRoles -contains "Distribution Point")
     {
-        Invoke-LabCommand -ComputerName $CMServer -ActivityName "Configuring boundary and boundary group" -Variable (Get-Variable "CMServerFqdn", "CMServerName", "CMSiteCode") -ScriptBlock {
+        Invoke-LabCommand -ComputerName $CMServer -ActivityName "Configuring boundary and boundary group" -Variable (Get-Variable "CMServerFqdn", "CMServerName", "CMSiteCode") -Function (Get-Command "Import-CMModule") -ScriptBlock {
             Import-CMModule -ComputerName $CMServerName -SiteCode $CMSiteCode -ErrorAction "Stop"
             $DPGroup = New-CMDistributionPointGroup -Name "All DPs" -ErrorAction "Stop"
             Add-CMDistributionPointToGroup -DistributionPointGroupId $DPGroup.GroupId -DistributionPointName $CMServerFqdn -ErrorAction "Stop"
@@ -1697,7 +1696,7 @@ function Install-CMSite
     Write-ScreenInfo -Message "Installing Endpoint Protection Point" -TaskStart
     if ($CMRoles -contains "Endpoint Protection Point")
     {
-        Invoke-LabCommand -ComputerName $CMServer -ActivityName "Installing Endpoint Protection Point" -Variable (Get-Variable "CMServerFqdn", "CMServerName", "CMSiteCode") -ScriptBlock {
+        Invoke-LabCommand -ComputerName $CMServer -ActivityName "Installing Endpoint Protection Point" -Variable (Get-Variable "CMServerFqdn", "CMServerName", "CMSiteCode") -Function (Get-Command "Import-CMModule") -ScriptBlock {
             Import-CMModule -ComputerName $CMServerName -SiteCode $CMSiteCode -ErrorAction "Stop"
             Add-CMEndpointProtectionPoint -ProtectionService "DoNotJoinMaps" -SiteCode $CMSiteCode -SiteSystemServerName $CMServerFqdn -ErrorAction "Stop"
         }
@@ -1711,7 +1710,7 @@ function Install-CMSite
 
     #region Configure boundary and boundary group
     Write-ScreenInfo -Message "Configuring boundary and boundary group" -TaskStart
-    Invoke-LabCommand -ComputerName $CMServer -ActivityName "Configuring boundary and boundary group" -Variable (Get-Variable "CMServerFqdn", "CMServerName", "CMSiteCode", "CMSiteName", "CMBoundaryIPRange") -ScriptBlock {
+    Invoke-LabCommand -ComputerName $CMServer -ActivityName "Configuring boundary and boundary group" -Variable (Get-Variable "CMServerFqdn", "CMServerName", "CMSiteCode", "CMSiteName", "CMBoundaryIPRange") -Function (Get-Command "Import-CMModule") -ScriptBlock {
         Import-CMModule -ComputerName $CMServerName -SiteCode $CMSiteCode -ErrorAction "Stop"
         $Boundary = New-CMBoundary -DisplayName $CMSiteName -Type "IPRange" -Value $CMBoundaryIPRange -ErrorAction "Stop"
         $BoundaryGroup = New-CMBoundaryGroup -Name $CMSiteName -AddSiteSystemServerName $CMServerFqdn -ErrorAction "Stop"
@@ -10649,9 +10648,9 @@ function Install-LabConfigurationManager
     }
 
     # Set up VM install directory
-    $deployDebugPath = Invoke-LabCommand -ComputerName $vms -ScriptBlock {
+    $deployDebugPath = [string](Invoke-LabCommand -ComputerName $vms -ScriptBlock {
         (New-Item -ItemType Directory -Path $ExecutionContext.InvokeCommand.ExpandString($AL_DeployDebugFolder) -ErrorAction SilentlyContinue -Force).FullName
-    } -PassThru -Variable (Get-Variable -Name AL_DeployDebugFolder -Scope Global) | Select-Object -First 1
+    } -PassThru -Variable (Get-Variable -Name AL_DeployDebugFolder -Scope Global) | Select-Object -First 1)
 
     # Copy layouts to VM
     if ($(Get-Lab).DefaultVirtualizationEngine -eq 'Azure')

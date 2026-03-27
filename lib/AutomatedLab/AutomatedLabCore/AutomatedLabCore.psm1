@@ -1318,6 +1318,14 @@ function Install-CMSite
     $CMSetupConfig['[SQLConfigOptions]'].DatabaseName = $DatabaseName
     $CMSetupConfig['[Options]'].PrerequisitePath = $VMCMPreReqsDirectory
 
+    # If the CM-Prereqs directory is empty or missing, let setup download its own prereqs
+    $prereqFiles = @(Get-ChildItem -Path $CMPreReqsDirectory -File -ErrorAction SilentlyContinue)
+    if ($prereqFiles.Count -eq 0)
+    {
+        Write-ScreenInfo -Message "CM-Prereqs directory is empty or missing -- setting PrerequisiteComp=0 so setup downloads prereqs"
+        $CMSetupConfig['[Options]'].PrerequisiteComp = 0
+    }
+
     if ($CMRoles -contains "Management Point")
     {
         $CMSetupConfig["[Options]"].ManagementPoint = $CMServerFqdn
@@ -1339,7 +1347,7 @@ function Install-CMSite
 
     $CMSetupConfigIni = "{0}\ConfigurationFile-CM-$CMServer.ini" -f $downloadTargetDirectory
     $null = New-Item -ItemType File -Path $CMSetupConfigIni -Force
-    
+
     foreach ($kvp in $CMSetupConfig.GetEnumerator())
     {
         $kvp.Key | Add-Content -Path $CMSetupConfigIni -Encoding ASCII
@@ -1361,7 +1369,7 @@ function Install-CMSite
         Write-LogFunctionExitWithError -Message $Message
     }
     #endregion
-    
+
     #region Pre-req checks
     Write-ScreenInfo -Message "Checking if site is already installed" -TaskStart
     $cim = New-LabCimSession -ComputerName $CMServer
@@ -10686,12 +10694,12 @@ function Install-LabConfigurationManager
 
     Install-LabSoftwarePackage -Path $ncli.FullName -ComputerName $vms -CommandLine "/qn /norestart IAcceptSqlncliLicenseTerms=Yes" -ExpectedReturnCodes 0
 
-    #region VC++, MSOLEDB, ODBC — skip if already installed (SQL setup installs these as prereqs)
+    #region VC++, ODBC -- skip if already installed (SQL setup installs these as prereqs)
+    # Note: MSOLEDB is NOT a CM prerequisite per Microsoft docs. CM only requires ODBC 18 and SQL Native Client.
     $prereqStatus = Invoke-LabCommand -ComputerName ($vms | Select-Object -First 1) -PassThru -ScriptBlock {
         $vcInstalled = (Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\VisualStudio\14.0\VC\Runtimes\X64' -ErrorAction SilentlyContinue).Installed -eq 1
         $odbcInstalled = $null -ne (Get-ItemProperty 'HKLM:\SOFTWARE\ODBC\ODBCINST.INI\ODBC Driver 18 for SQL Server' -ErrorAction SilentlyContinue)
-        $oledbInstalled = $null -ne (Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\MSOLEDBSQL' -ErrorAction SilentlyContinue)
-        @{ VC = $vcInstalled; ODBC = $odbcInstalled; OLEDB = $oledbInstalled }
+        @{ VC = $vcInstalled; ODBC = $odbcInstalled }
     }
 
     if ($prereqStatus.VC) {
@@ -10710,22 +10718,6 @@ function Install-LabConfigurationManager
         Install-LabSoftwarePackage -Path $vcx86 -ComputerName $vms -CommandLine '/quiet /norestart' -ExpectedReturnCodes 0, 3010
         Write-ScreenInfo -Message 'Restarting VMs after VC++ install (3010 reboot pending)'
         Restart-LabVM -ComputerName $vms -Wait
-    }
-
-    if ($prereqStatus.OLEDB) {
-        Write-ScreenInfo -Message 'MSOLEDB already installed (by SQL setup) -- skipping'
-    } else {
-        Write-ScreenInfo -Message 'Installing MSOLEDB 19'
-        $msoledbMsi = Join-Path $labSources 'SoftwarePackages/MSOLEDB/msoledbsql.msi'
-        try {
-            if (-not (Test-Path $msoledbMsi)) {
-                $msoledbMsi = (Get-LabInternetFile -Uri 'https://go.microsoft.com/fwlink/?linkid=2277846' -Path "$labSources/SoftwarePackages/MSOLEDB" -FileName 'msoledbsql.msi' -PassThru -ErrorAction Stop).FullName
-            }
-            Install-LabSoftwarePackage -Path $msoledbMsi -ComputerName $vms -CommandLine '/qn /norestart IACCEPTMSOLEDBSQLLICENSETERMS=YES' -ExpectedReturnCodes 0, 3010, 1603
-        }
-        catch {
-            Write-ScreenInfo -Message "MSOLEDB install failed: $($_.Exception.Message). CM setup handles upgrade from prereqs." -Type Warning
-        }
     }
 
     if ($prereqStatus.ODBC) {

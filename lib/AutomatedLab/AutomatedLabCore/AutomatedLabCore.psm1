@@ -1574,7 +1574,7 @@ function Install-CMSite
         if ($found) { return $found.FullName }
         throw "CM setup.exe not found under $VMCMBinariesDirectory"
     }
-    Install-LabSoftwarePackage -LocalPath $exePath -CommandLine $cmd -ProgressIndicator 10 -ExpectedReturnCodes 0 -ComputerName $CMServer -Timeout $timeout
+    Install-LabSoftwarePackage -LocalPath ([string]$exePath) -CommandLine $cmd -ProgressIndicator 10 -ExpectedReturnCodes 0 -ComputerName $CMServer -Timeout $timeout
     Write-ScreenInfo -Message "Activity done" -TaskEnd
     #endregion
 

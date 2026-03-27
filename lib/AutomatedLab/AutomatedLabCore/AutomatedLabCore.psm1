@@ -10835,7 +10835,16 @@ function Install-LabConfigurationManager
                 else
                 {
                     Expand-Archive -Path $CMZipObj.FullName -DestinationPath $CMBinariesDirectory -Force -ErrorAction "Stop" -ErrorVariable "ExpandArchiveErr"
-                    Copy-LabFileItem -Path $CMBinariesDirectory/* -Destination $VMCMBinariesDirectory -ComputerName $vm -Recurse
+                    Copy-LabFileItem -Path $CMBinariesDirectory -Destination $VMCMBinariesDirectory -ComputerName $vm -Recurse
+                    Invoke-LabCommand -ComputerName $vm -ActivityName 'Flatten extracted CM source' -Variable (Get-Variable VMCMBinariesDirectory) -ScriptBlock {
+                        $subDirs = Get-ChildItem $VMCMBinariesDirectory -Directory -ErrorAction SilentlyContinue
+                        foreach ($sub in $subDirs) {
+                            if (Test-Path (Join-Path $sub.FullName 'SMSSETUP')) {
+                                robocopy $sub.FullName $VMCMBinariesDirectory /E /MOVE /NFL /NDL /NJH /NJS /nc /ns /np | Out-Null
+                                break
+                            }
+                        }
+                    }
                 }
             }
             catch
@@ -10846,8 +10855,15 @@ function Install-LabConfigurationManager
         }
         else
         {
-            # Local source — copy directly to VM
-            Copy-LabFileItem -Path "$CMBinariesDirectory\*" -Destination $VMCMBinariesDirectory -ComputerName $vm -Recurse
+            # Local source — copy directory to VM, then flatten if nested
+            Copy-LabFileItem -Path $CMBinariesDirectory -Destination $VMCMBinariesDirectory -ComputerName $vm -Recurse
+            $dirName = Split-Path $CMBinariesDirectory -Leaf
+            Invoke-LabCommand -ComputerName $vm -ActivityName 'Flatten CM source' -Variable (Get-Variable VMCMBinariesDirectory, dirName) -ScriptBlock {
+                $nested = Join-Path $VMCMBinariesDirectory $dirName
+                if (Test-Path $nested) {
+                    robocopy $nested $VMCMBinariesDirectory /E /MOVE /NFL /NDL /NJH /NJS /nc /ns /np | Out-Null
+                }
+            }
         }
         #endregion
 

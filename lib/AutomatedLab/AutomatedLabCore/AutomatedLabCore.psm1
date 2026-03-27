@@ -10648,9 +10648,10 @@ function Install-LabConfigurationManager
     }
 
     # Set up VM install directory
-    $deployDebugPath = [string](Invoke-LabCommand -ComputerName $vms -ScriptBlock {
+    $deployDebugPathResults = Invoke-LabCommand -ComputerName $vms -ScriptBlock {
         (New-Item -ItemType Directory -Path $ExecutionContext.InvokeCommand.ExpandString($AL_DeployDebugFolder) -ErrorAction SilentlyContinue -Force).FullName
-    } -PassThru -Variable (Get-Variable -Name AL_DeployDebugFolder -Scope Global) | Select-Object -First 1)
+    } -PassThru -Variable (Get-Variable -Name AL_DeployDebugFolder -Scope Global)
+    $deployDebugPath = if ($deployDebugPathResults -is [array]) { [string]$deployDebugPathResults[0] } else { [string]$deployDebugPathResults }
 
     # Copy layouts to VM
     if ($(Get-Lab).DefaultVirtualizationEngine -eq 'Azure')

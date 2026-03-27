@@ -38,6 +38,9 @@
 - Recipe/Ships/Test modules removed from manifest (parse errors)
 - Force vendored module overwrite on install
 - PSFConfig VC++ URL override after Import-Module
+- PSObject serialization: `$deployDebugPath` and `$exePath` cast to `[string]` (Invoke-LabCommand -PassThru returns PSObject, not string)
+- Missing `-Function (Get-Command "Import-CMModule")` on 3 Invoke-LabCommand calls in Install-CMSite
+- Double TaskEnd in Install-CMSite pre-req checks region
 
 ### Added
 - CLIENT01 (Windows 11 Enterprise) workstation VM

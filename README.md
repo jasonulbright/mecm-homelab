@@ -17,7 +17,7 @@ Deploys a fully functional ConfigMgr 2509 primary site with Windows Server 2025,
 
 | VM | Role | IP | RAM | vCPU | OS | Internet |
 |----|------|----|-----|------|----|----------|
-| DC01 | Domain Controller, Root CA, Routing | 192.168.50.10 | 1-2 GB | 2 | Windows Server 2025 | No |
+| DC01 | Domain Controller, Root CA | 192.168.50.10 | 1-2 GB | 2 | Windows Server 2025 | No |
 | CM01 | SQL Server 2022, ConfigMgr 2509 | 192.168.50.20 | 4-12 GB | 4 | Windows Server 2025 | Yes (NAT) |
 | CLIENT01 | Workstation (managed client) | 192.168.50.100 | 2-4 GB | 2 | Windows 11 Enterprise | No |
 

@@ -9,17 +9,35 @@
 - CLIENT01 deferred until after DC01+CM01 are built (avoids RAM contention during AD/SQL install)
 - NAT internet access restricted to CM01 only. DC01 and CLIENT01 are internal-only.
 
-### Fixed (in vendored AutomatedLab fork)
+### Fixed (29 bugs total — all in vendored AutomatedLab fork, fixed at the source)
 - DHCP role implemented (was "not implemented" placeholder)
 - CM local source auto-detection (no hardcoded version URLs for CM 2509+)
 - VC++ runtime URLs updated from 2015/2017 to latest (14.50)
+- Stale cached VC++ 2015/2017 binaries cleaned up on startup
 - Reboot after VC++ install before ODBC/MSOLEDB (3010 pending reboot blocked MSI)
-- MSOLEDB 1603 treated as non-fatal (already installed by SQL setup)
+- MSOLEDB install non-fatal (download may fail, SQL has baseline, CM handles upgrade)
+- SSRS install/config non-fatal (fails on some Server 2025 configs, optional for CM)
 - ADK arguments fixed (single string format, not array)
 - Flatten step idempotent (Copy-Item instead of Move-Item)
 - SQL Server 2022 added to auto-detection
-- setup.exe recursive path search (SMSSETUP\BIN\X64)
 - Default disk size increased from 50GB to 100GB
+- Install-CMSite hardcoded paths replaced with `$VMInstallDirectory` parameter
+- `$VMCMBinariesDirectory` and `$VMCMPreReqsDirectory` derived from parameter, not hardcoded
+- Case mismatch `CM-Prereqs` vs `CM-PreReqs` normalized
+- INI copy destination and path reference use `$VMInstallDirectory`
+- Error messages fixed (undefined variables, wrong format placeholders)
+- `VMInstallDirectory` passed to `Install-CMSite` via splatted hashtable
+- `$WMIZip` typo fixed to `$WMIv2Zip`
+- AV exclusion path `C:\InstallCM\` fixed to `C:\Install\CM\`
+- Stale ADK/WinPE AV exclusion paths removed
+- `Add-LocalGroupMember` missing `-ErrorAction SilentlyContinue` (already-member crash)
+- Routing role removed from DC01 (requires 2 NICs, DC01 is internal-only)
+- Default Switch defined as Internal (not External)
+- MinMemory required when MaxMemory set
+- DNS moved to network adapter definition (parameter set conflict)
+- Recipe/Ships/Test modules removed from manifest (parse errors)
+- Force vendored module overwrite on install
+- PSFConfig VC++ URL override after Import-Module
 
 ### Added
 - CLIENT01 (Windows 11 Enterprise) workstation VM

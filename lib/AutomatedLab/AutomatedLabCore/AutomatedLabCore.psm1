@@ -1274,7 +1274,10 @@ function Install-CMSite
         [string] $WsusContentPath = 'C:\WsusContent',
 
         [Parameter()]
-        [string] $AdminUser
+        [string] $AdminUser,
+
+        [Parameter()]
+        [string] $VMInstallDirectory = 'C:\Install'
     )
 
     #region Initialise
@@ -1282,11 +1285,10 @@ function Install-CMSite
     $CMServerFqdn = $CMServer.FQDN
     $DCServerName = Get-LabVM -Role RootDC | Where-Object { $_.DomainName -eq $CMServer.DomainName } | Select-Object -ExpandProperty Name
     $downloadTargetDirectory = "{0}\SoftwarePackages" -f $(Get-LabSourcesLocation -Local)
-    $VMInstallDirectory = "C:\Install"
     $LabVirtualNetwork = (Get-Lab).VirtualNetworks.Where( { $_.SwitchType -ne 'External' -and $_.ResourceName -in $CMServer.Network }, 'First', 1).AddressSpace
     $CMBoundaryIPRange = "{0}-{1}" -f $LabVirtualNetwork.FirstUsable.AddressAsString, $LabVirtualNetwork.LastUsable.AddressAsString
-    $VMCMBinariesDirectory = "C:\Install\CM"
-    $VMCMPreReqsDirectory = "C:\Install\CM-Prereqs"
+    $VMCMBinariesDirectory = "{0}\CM" -f $VMInstallDirectory
+    $VMCMPreReqsDirectory = "{0}\CM-PreReqs" -f $VMInstallDirectory
     $CMComputerAccount = '{0}\{1}$' -f $CMServer.DomainName.Substring(0, $CMServer.DomainName.IndexOf('.')), $CMServerName
     $CMSetupConfig = $configurationManagerContent.Clone()
     $labCred = $CMServer.GetCredential((Get-Lab))
@@ -1348,13 +1350,14 @@ function Install-CMSite
     }
 
     # Put CM ini file in same location as SQL ini, just for consistency. Placement of SQL ini from SQL role isn't configurable.
+    $CMSetupConfigIniSource = "{0}\ConfigurationFile-CM-$CMServer.ini" -f $downloadTargetDirectory
     try
     {
-        Copy-LabFileItem -Path $("{0}\ConfigurationFile-CM-$CMServer.ini" -f $downloadTargetDirectory) -DestinationFolderPath 'C:\Install' -ComputerName $CMServer
+        Copy-LabFileItem -Path $CMSetupConfigIniSource -DestinationFolderPath $VMInstallDirectory -ComputerName $CMServer
     }
     catch
     {
-        $Message = "Failed to copy '{0}' to '{1}' on server '{2}' ({2})" -f $Path, $TargetDir, $CMServerName, $CopyLabFileItem.Exception.Message
+        $Message = "Failed to copy '{0}' to '{1}' on server '{2}' ({3})" -f $CMSetupConfigIniSource, $VMInstallDirectory, $CMServerName, $_.Exception.Message
         Write-LogFunctionExitWithError -Message $Message
     }
     #endregion
@@ -1556,7 +1559,7 @@ function Install-CMSite
     
     #region Install Configuration Manager
     Write-ScreenInfo "Installing Configuration Manager" -TaskStart
-    $iniPath = "C:\Install\ConfigurationFile-CM-$CMServer.ini"
+    $iniPath = "$VMInstallDirectory\ConfigurationFile-CM-$CMServer.ini"
     $cmd = "/Script `"{0}`" /NoUserInput" -f $iniPath
     $timeout = Get-LabConfigurationItem -Name Timeout_ConfigurationManagerInstallation -Default 60
     if ((Get-Lab).DefaultVirtualizationEngine -eq 'Azure') { $timeout = $timeout + 30 }
@@ -10753,7 +10756,7 @@ function Install-LabConfigurationManager
     }
     catch
     {
-        Write-ScreenInfo -Message ("Failed to delete '{0}' ({1})" -f $WMIZip, $RemoveItemErr.ErrorRecord.Exception.Message) -Type "Warning"
+        Write-ScreenInfo -Message ("Failed to delete '{0}' ({1})" -f $WMIv2Zip, $RemoveItemErr.ErrorRecord.Exception.Message) -Type "Warning"
     }
 
     if ((Get-Lab).DefaultVirtualizationEngine -eq 'Azure') { Sync-LabAzureLabSources -Filter WmiExplorer.exe }
@@ -10897,6 +10900,7 @@ function Install-LabConfigurationManager
             CMSiteName          = 'AutomatedLab-01'
             CMRoles             = 'Management Point', 'Distribution Point'
             DatabaseName        = 'ALCMDB'
+            VMInstallDirectory  = $VMInstallDirectory
         }
 
         if ($role.Properties.ContainsKey('SiteCode'))
@@ -28598,9 +28602,7 @@ $adInstallDcPre2012 = {
 
 $configurationManagerAVExcludedPaths = @(
     'C:\Install'
-    'C:\Install\ADK\adksetup.exe'
-    'C:\Install\WinPE\adkwinpesetup.exe'
-    'C:\InstallCM\SMSSETUP\BIN\X64\setup.exe'
+    'C:\Install\CM\SMSSETUP\BIN\X64\setup.exe'
     'C:\Program Files\Microsoft SQL Server\MSSQL14.MSSQLSERVER\MSSQL\Binn\sqlservr.exe'
     'C:\Program Files\Microsoft SQL Server Reporting Services\SSRS\ReportServer\bin\ReportingServicesService.exe'
     'C:\Program Files\Microsoft Configuration Manager'
@@ -28625,8 +28627,6 @@ $configurationManagerAVExcludedPaths = @(
     'C:\Windows\CCMCache'
 )
 $configurationManagerAVExcludedProcesses = @(
-    'C:\Install\ADK\adksetup.exe'
-    'C:\Install\WinPE\adkwinpesetup.exe'
     'C:\Install\CM\SMSSETUP\BIN\X64\setup.exe'
     'C:\Program Files\Microsoft SQL Server\MSSQL14.MSSQLSERVER\MSSQL\Binn\sqlservr.exe'
     'C:\Program Files\Microsoft SQL Server Reporting Services\SSRS\ReportServer\bin\ReportingServicesService.exe'

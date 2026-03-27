@@ -1563,17 +1563,9 @@ function Install-CMSite
     $timeout = Get-LabConfigurationItem -Name Timeout_ConfigurationManagerInstallation -Default 60
     if ((Get-Lab).DefaultVirtualizationEngine -eq 'Azure') { $timeout = $timeout + 30 }
 
-    # Locate setup.exe: try explicit path first, then recursive search (extracted layout may nest differently)
-    $exePath = Invoke-LabCommand -ComputerName $CMServer -PassThru -Variable (Get-Variable VMCMBinariesDirectory) -ScriptBlock {
-        $explicit = Join-Path $VMCMBinariesDirectory 'SMSSETUP\BIN\X64\setup.exe'
-        if (Test-Path $explicit) { return $explicit }
-        $found = Get-ChildItem -Path $VMCMBinariesDirectory -Filter 'setup.exe' -Recurse -ErrorAction SilentlyContinue |
-            Where-Object { $_.FullName -match 'SMSSETUP\\BIN\\X64\\setup\.exe$' } |
-            Select-Object -First 1
-        if ($found) { return $found.FullName }
-        throw "CM setup.exe not found under $VMCMBinariesDirectory"
-    }
-    Install-LabSoftwarePackage -LocalPath ([string]$exePath) -CommandLine $cmd -ProgressIndicator 10 -ExpectedReturnCodes 0 -ComputerName $CMServer -Timeout $timeout
+    # Build setup.exe path locally — no Invoke-LabCommand needed (avoids PSObject serialization issues)
+    $exePath = "$VMCMBinariesDirectory\SMSSETUP\BIN\X64\setup.exe"
+    Install-LabSoftwarePackage -LocalPath $exePath -CommandLine $cmd -ProgressIndicator 10 -ExpectedReturnCodes 0 -ComputerName $CMServer -Timeout $timeout
     Write-ScreenInfo -Message "Activity done" -TaskEnd
     #endregion
 

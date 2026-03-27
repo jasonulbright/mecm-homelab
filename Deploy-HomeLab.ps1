@@ -76,7 +76,8 @@ $netbios     = ($domainName -split '\.')[0].ToUpper()
 
 Write-Host "`nMECM Home Lab Deployment" -ForegroundColor White
 Write-Host "  Lab: $labName | Domain: $domainName | Site: $siteCode" -ForegroundColor DarkGray
-Write-Host "  Started: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')" -ForegroundColor DarkGray
+$script:deployStartTime = Get-Date
+Write-Host "  Started: $($script:deployStartTime.ToString('yyyy-MM-dd HH:mm:ss'))" -ForegroundColor DarkGray
 
 ###############################################################################
 # PHASE 1: PREREQUISITES
@@ -798,14 +799,18 @@ Invoke-LabCommand -ComputerName $cmName -ActivityName 'Create Tools directory' -
     if (-not (Test-Path 'C:\Tools')) { New-Item -Path 'C:\Tools' -ItemType Directory -Force | Out-Null }
 }
 
-# Copy cc4cm if available locally
-$cc4cmSource = 'C:\projects\Internal\cc4cm'
-if (Test-Path $cc4cmSource) {
+# Copy cc4cm if available locally (check for release zip or build output)
+$cc4cmZip = Get-ChildItem 'C:\temp' -Filter 'ClientCenter-*.zip' -ErrorAction SilentlyContinue | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+if ($cc4cmZip) {
     Write-Status 'Copying Client Center (cc4cm)...' -Level RUN
-    Copy-LabFileItem -Path $cc4cmSource -ComputerName $cmName -DestinationFolderPath 'C:\Tools' -Recurse
-    Write-Status 'cc4cm deployed to C:\Tools\cc4cm'
+    Copy-LabFileItem -Path $cc4cmZip.FullName -ComputerName $cmName -DestinationFolderPath 'C:\temp'
+    Invoke-LabCommand -ComputerName $cmName -ActivityName 'Extract cc4cm' -ScriptBlock {
+        $zip = Get-ChildItem 'C:\temp' -Filter 'ClientCenter-*.zip' | Select-Object -First 1
+        if ($zip) { Expand-Archive -Path $zip.FullName -DestinationPath 'C:\Tools\ClientCenter' -Force }
+    }
+    Write-Status 'cc4cm deployed to C:\Tools\ClientCenter'
 } else {
-    Write-Status "cc4cm not found at $cc4cmSource -- skipping" -Level WARN
+    Write-Status 'cc4cm release zip not found in C:\temp -- skipping' -Level WARN
 }
 
 # Copy ApplicationPackager if available locally
@@ -844,7 +849,7 @@ Write-Status 'Snapshots created: Deployment-Complete'
 
 Write-Step 'Deployment Complete!'
 
-$elapsed = (Get-Date) - (Get-Date $MyInvocation.MyCommand.Module.PrivateData.StartTime -ErrorAction SilentlyContinue)
+$elapsed = if ($script:deployStartTime) { (Get-Date) - $script:deployStartTime } else { [TimeSpan]::Zero }
 
 Write-Host ''
 Write-Host '  =============================================' -ForegroundColor Green

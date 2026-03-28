@@ -25262,16 +25262,8 @@ else {
     Join-Path -Path $Home -ChildPath .automatedlab
 }
 Set-PSFConfig -Module 'AutomatedLab' -Name LabAppDataRoot -Value $labAppDataRoot -Initialize -Validation string -Description "Root folder to Labs, Assets and Stores"
-Set-PSFConfig -Module 'AutomatedLab' -Name 'DisableVersionCheck' -Value $false -Initialize -Validation bool -Description 'Set to true to skip checking GitHub for an updated AutomatedLab release'
-
-if (-not (Get-PSFConfigValue -FullName AutomatedLab.DisableVersionCheck)) {
-    $usedRelease = (Split-Path -Leaf -Path $PSScriptRoot) -as [version]
-    $currentRelease = try { ((Invoke-RestMethod -Method Get -Uri https://api.github.com/repos/AutomatedLab/AutomatedLab/releases/latest -ErrorAction Stop).tag_Name -replace 'v') -as [Version] } catch {}
-
-    if ($currentRelease -and $usedRelease -lt $currentRelease) {
-        Write-PSFMessage -Level Host -Message "Your version of AutomatedLab is outdated. Consider updating to the recent version, $currentRelease"
-    }
-}
+# Version check disabled — this is a community fork, not the upstream PSGallery release
+Set-PSFConfig -Module 'AutomatedLab' -Name 'DisableVersionCheck' -Value $true -Initialize -Validation bool -Description 'Set to true to skip checking GitHub for an updated AutomatedLab release'
 
 
 Set-PSFConfig -Module 'AutomatedLab' -Name 'Notifications.NotificationProviders.Ifttt.Key' -Value 'Your IFTTT key here' -Initialize -Validation string -Description "IFTTT Key Name"

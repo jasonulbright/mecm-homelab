@@ -1268,7 +1268,7 @@ function Install-CMSite
         $SqlServerName,
 
         [Parameter()]
-        [string] $DatabaseName = 'ALCMDB',
+        [string] $DatabaseName,
 
         [Parameter()]
         [string] $WsusContentPath = 'C:\WsusContent',
@@ -1297,6 +1297,12 @@ function Install-CMSite
         $AdminUser = $labCred.UserName.Split('\')[1]
     }
     $AdminPass = $labCred.GetNetworkCredential().Password
+
+    # Default DatabaseName to CM_<SiteCode> (standard CM convention) if not specified
+    if (-not $DatabaseName)
+    {
+        $DatabaseName = "CM_$CMSiteCode"
+    }
 
     Invoke-LabCommand -ComputerName $DCServerName -Variable (Get-Variable labCred, AdminUser) -ScriptBlock {
         try
@@ -1468,7 +1474,12 @@ function Install-CMSite
 
     #region Extend the AD Schema
     Write-ScreenInfo -Message "Extending the AD Schema" -TaskStart
-    Install-LabSoftwarePackage -LocalPath "$VMCMBinariesDirectory\SMSSETUP\BIN\X64\extadsch.exe" -ComputerName $CMServerName
+    # Run extadsch.exe in place via Invoke-LabCommand instead of Install-LabSoftwarePackage,
+    # which copies the file to a temp location and consumes it
+    Invoke-LabCommand -ComputerName $CMServerName -ActivityName "Extending the AD Schema" -Variable (Get-Variable VMCMBinariesDirectory) -ScriptBlock {
+        $extadschPath = "$VMCMBinariesDirectory\SMSSETUP\BIN\X64\extadsch.exe"
+        Start-Process -FilePath $extadschPath -Wait -NoNewWindow -ErrorAction Stop
+    }
     Write-ScreenInfo -Message "Activity done" -TaskEnd
     #endregion
 
@@ -10911,7 +10922,6 @@ function Install-LabConfigurationManager
             CMSiteCode          = 'AL1'
             CMSiteName          = 'AutomatedLab-01'
             CMRoles             = 'Management Point', 'Distribution Point'
-            DatabaseName        = 'ALCMDB'
             VMInstallDirectory  = $VMInstallDirectory
         }
 
@@ -10991,6 +11001,22 @@ function Install-LabConfigurationManager
         {
             $siteParameter.WsusContentPath = $role.Properties.WsusContentPath
         }
+
+        #region Configure SQL memory before CM install
+        Write-ScreenInfo -Message "Configuring SQL Server memory (min/max 8GB)" -TaskStart
+        Invoke-LabCommand -ComputerName $sql.Split('.')[0] -ActivityName 'Configure SQL memory 8GB min/max' -ScriptBlock {
+            $sqlCmd = @"
+EXEC sp_configure 'show advanced options', 1;
+RECONFIGURE;
+EXEC sp_configure 'min server memory', 8192;
+EXEC sp_configure 'max server memory', 8192;
+RECONFIGURE;
+"@
+            sqlcmd -Q $sqlCmd
+        }
+        Write-ScreenInfo -Message "Activity done" -TaskEnd
+        #endregion
+
         Install-CMSite @siteParameter
 
         Restart-LabVM -ComputerName $vm
@@ -28590,10 +28616,11 @@ $adInstallDcPre2012 = {
         SDKServer                 = ''
         RoleCommunicationProtocol = 'HTTPorHTTPS'
         ClientsUsePKICertificate  = 0
-        PrerequisiteComp          = 1
+        PrerequisiteComp          = 0
         PrerequisitePath          = 'C:\Install\CM-Prereqs'
         AdminConsole              = 1
         JoinCEIP                  = 0
+        MobileDeviceLanguage      = 0
     }
            
     '[SQLConfigOptions]'         = @{
@@ -28607,8 +28634,13 @@ $adInstallDcPre2012 = {
         UseProxy             = 0
     }
            
+    '[SABranchOptions]'          = @{
+        SAActive      = 1
+        CurrentBranch = 1
+    }
+
     '[SystemCenterOptions]'      = @{}
-           
+
     '[HierarchyExpansionOption]' = @{}
 }
 

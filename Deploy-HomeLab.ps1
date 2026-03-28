@@ -159,7 +159,8 @@ Write-Status "AutomatedLab v$($al.Version) (vendored fork)"
 
 Import-Module AutomatedLab -ErrorAction Stop
 
-# Force our vendored VC++ URLs (PSFConfig -Initialize won't overwrite existing values)
+# Force our vendored config overrides (PSFConfig -Initialize won't overwrite persisted values)
+Set-PSFConfig -Module 'AutomatedLab' -Name DisableVersionCheck -Value $true
 Set-PSFConfig -Module 'AutomatedLab' -Name cppredist64_2017 -Value 'https://aka.ms/vs/18/release/vc_redist.x64.exe'
 Set-PSFConfig -Module 'AutomatedLab' -Name cppredist32_2017 -Value 'https://aka.ms/vs/18/release/vc_redist.x86.exe'
 Set-PSFConfig -Module 'AutomatedLab' -Name cppredist64_2015 -Value 'https://aka.ms/vs/18/release/vc_redist.x64.exe'

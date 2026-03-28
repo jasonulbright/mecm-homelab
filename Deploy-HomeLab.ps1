@@ -166,8 +166,8 @@ Set-PSFConfig -Module 'AutomatedLab' -Name cppredist32_2017 -Value 'https://aka.
 Set-PSFConfig -Module 'AutomatedLab' -Name cppredist64_2015 -Value 'https://aka.ms/vs/18/release/vc_redist.x64.exe'
 Set-PSFConfig -Module 'AutomatedLab' -Name cppredist32_2015 -Value 'https://aka.ms/vs/18/release/vc_redist.x86.exe'
 
-# Remove stale cached old VC++ runtimes (PSGallery version downloaded 2015/2017 binaries
-# which conflict with latest 14.50). Get-LabInternetFile won't re-download if file exists.
+# Remove stale cached old VC++ runtimes (PSGallery version downloaded version-specific binaries
+# which conflict with latest). Get-LabInternetFile won't re-download if file exists.
 $labSrc = Get-LabSourcesLocation -ErrorAction SilentlyContinue
 if ($labSrc) {
     foreach ($stale in @('vcredist_x64_2015.exe','vcredist_x86_2015.exe','vcredist_x64_2017.exe','vcredist_x86_2017.exe')) {

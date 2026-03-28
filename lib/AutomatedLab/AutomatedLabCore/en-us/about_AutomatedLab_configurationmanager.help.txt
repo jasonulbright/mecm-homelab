@@ -23,7 +23,7 @@ Configuration Manager
     - SiteCode: Three-digit site code, defaults to AL1
     - SqlServerName: Use to specify a machine that is part of the lab (!).
     Defaults to first available SQL server in the lab
-    - DatabaseName: Name of the DB, defaults to ALCMDB
+    - DatabaseName: Name of the DB, defaults to CM_<SiteCode>
     - WsusContentPath: Path to WSUS content for an update point. Remember to
     Add-LabDiskDefinition ;)
     - AdminUser: Name of administrative account. Automatically created with Lab

@@ -1,0 +1,7 @@
+{
+  "ProjectType": "powershell-script",
+  "Status": "active",
+  "Category": "Infrastructure",
+  "ValidationSchedule": "none",
+  "Notes": "MECM home lab deployment. Vendored AutomatedLab fork. Needs clean E2E log capture for docs."
+}

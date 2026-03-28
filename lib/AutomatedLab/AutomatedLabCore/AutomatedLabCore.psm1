@@ -25442,11 +25442,11 @@ Set-PSFConfig -Module 'AutomatedLab' -Name dotnet472DownloadLink -Value 'https:/
 Set-PSFConfig -Module 'AutomatedLab' -Name dotnet48DownloadLink -Value 'https://download.visualstudio.microsoft.com/download/pr/7afca223-55d2-470a-8edc-6a1739ae3252/abd170b4b0ec15ad0222a809b761a036/ndp48-x86-x64-allos-enu.exe' -Initialize -Validation string -Description 'Link to .NET 4.8'
 
 # C++ redist
-# VC++ runtimes: use latest (14.50+ / VS 2026). Supersedes 2015 and 2017 — backward compatible.
+# VC++ runtimes: use latest (14.50+ / VS 2026). Supersedes all prior versions — backward compatible.
 Set-PSFConfig -Module 'AutomatedLab' -Name cppredist64_2017 -Value 'https://aka.ms/vs/18/release/vc_redist.x64.exe' -Initialize -Validation string -Description 'Link to VC++ redist latest (x64)'
 Set-PSFConfig -Module 'AutomatedLab' -Name cppredist32_2017 -Value 'https://aka.ms/vs/18/release/vc_redist.x86.exe' -Initialize -Validation string -Description 'Link to VC++ redist latest (x86)'
 
-# 2015 URLs point to latest too — the latest runtime is backward compatible with 2015/2017
+# Legacy config keys also point to latest — backward compatible with all prior versions
 Set-PSFConfig -Module 'AutomatedLab' -Name cppredist64_2015 -Value 'https://aka.ms/vs/18/release/vc_redist.x64.exe' -Initialize -Validation string -Description 'Link to VC++ redist latest (x64)'
 Set-PSFConfig -Module 'AutomatedLab' -Name cppredist32_2015 -Value 'https://aka.ms/vs/18/release/vc_redist.x86.exe' -Initialize -Validation string -Description 'Link to VC++ redist latest (x86)'
 

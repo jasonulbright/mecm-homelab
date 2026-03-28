@@ -4,8 +4,18 @@
     SiteCode       = 'MCM'
     SiteName       = 'Home Lab Primary Site'
     Network        = '192.168.50'
+
+    # ── CHANGE THESE PASSWORDS BEFORE DEPLOYING ──────────────────────────────
+    # Default passwords are published in source control. Treat this lab as
+    # internet-facing even if it is not -- change every password below.
     AdminUser      = 'LabAdmin'
     AdminPass      = 'P@ssw0rd!'
+
+    # OS filters -- matched against Get-LabAvailableOperatingSystem from your ISOs.
+    # Wildcard patterns. The highest-version match wins.
+    ServerOSFilter = 'Windows Server 2025*Desktop Experience*'
+    ClientOSFilter = 'Windows 11*Enterprise*'
+
     DC = @{
         Name       = 'DC01'
         IP         = '192.168.50.10'
@@ -33,7 +43,8 @@
         MaxMemory  = 4GB
         Processors = 2
     }
-    # Service accounts
+
+    # Service accounts — CHANGE THESE PASSWORDS
     ServiceAccounts = @{
         ClientPush = @{
             Name     = 'svc-CMPush'
@@ -45,7 +56,7 @@
             Name     = 'svc-CMNAA'
             Password = 'P@ssw0rd!NAA1'
             Desc     = 'MECM Network Access Account'
-            Group    = $null  # Domain Users only — least privilege
+            Group    = $null  # Domain Users only -- least privilege
         }
         Admin = @{
             Name     = 'svc-CMAdmin'
@@ -54,6 +65,7 @@
             Group    = 'Domain Admins'  # Also added to Remote Desktop Users
         }
     }
+
     # Software versions
     ODBCVersion    = '18.5.2.1'
     ODBCURL        = 'https://go.microsoft.com/fwlink/?linkid=2335671'

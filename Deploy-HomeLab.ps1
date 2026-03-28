@@ -11,7 +11,7 @@
       3.  Create LabSources folder structure, verify ISOs, create ADK offline layouts
       4.  Define and deploy the lab (DC01 + CM01 + CLIENT01) via AutomatedLab
           - AutomatedLab handles: SQL, VC++, ODBC, MSOLEDB, ADK, AD schema, CM install
-      5.  Expand CM01 OS disk, configure SQL memory
+      5.  Expand CM01 OS disk (if below configured size)
       6.  Create service accounts (svc-CMPush, svc-CMNAA, svc-CMAdmin)
       7.  Create content share on CM01
       8.  Add svc-CMAdmin as MECM Full Administrator
@@ -28,20 +28,64 @@
 .PARAMETER RemoveExisting
     If specified, removes an existing lab with the same name without prompting.
 
+.PARAMETER LogFile
+    Path to a clean log file. Captures all output without ANSI color codes,
+    progress bars, or carriage returns. Suitable for documentation or review.
+
 .EXAMPLE
     .\Deploy-HomeLab.ps1
 
 .EXAMPLE
     .\Deploy-HomeLab.ps1 -RemoveExisting
+
+.EXAMPLE
+    .\Deploy-HomeLab.ps1 -LogFile C:\temp\deploy.log
 #>
 
 param(
-    [switch]$RemoveExisting
+    [switch]$RemoveExisting,
+    [string]$LogFile
 )
 
 $ErrorActionPreference = 'Stop'
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
+
+# Log file setup -- writes clean text (no ANSI, no progress bars) alongside console output.
+# Intercepts Write-Host so ALL output is logged without modifying 115+ call sites.
+if ($LogFile) {
+    $script:logStream = [System.IO.StreamWriter]::new($LogFile, $false, [System.Text.Encoding]::UTF8)
+    $script:logStream.AutoFlush = $true
+
+    # Rename the real Write-Host and replace it with a logging wrapper
+    if (-not (Get-Command Write-HostOriginal -ErrorAction SilentlyContinue)) {
+        $null = New-Item -Path function: -Name 'script:Write-HostOriginal' -Value (Get-Command Write-Host).ScriptBlock -ErrorAction SilentlyContinue
+    }
+
+    function Write-Host {
+        param(
+            [Parameter(Position=0)][object]$Object,
+            [switch]$NoNewline,
+            [object]$ForegroundColor,
+            [object]$BackgroundColor,
+            [string]$Separator = ' '
+        )
+        # Write to console (with color)
+        $params = @{}
+        if ($PSBoundParameters.ContainsKey('Object'))          { $params.Object = $Object }
+        if ($PSBoundParameters.ContainsKey('NoNewline'))        { $params.NoNewline = $NoNewline }
+        if ($PSBoundParameters.ContainsKey('ForegroundColor'))  { $params.ForegroundColor = $ForegroundColor }
+        if ($PSBoundParameters.ContainsKey('BackgroundColor'))  { $params.BackgroundColor = $BackgroundColor }
+        if ($PSBoundParameters.ContainsKey('Separator'))        { $params.Separator = $Separator }
+        Microsoft.PowerShell.Utility\Write-Host @params
+
+        # Write to log (clean text, no color codes)
+        if ($script:logStream) {
+            $text = if ($null -eq $Object) { '' } else { [string]$Object }
+            if ($NoNewline) { $script:logStream.Write($text) } else { $script:logStream.WriteLine($text) }
+        }
+    }
+}
 
 function Write-Step {
     param([string]$Title)
@@ -78,6 +122,24 @@ Write-Host "`nMECM Home Lab Deployment" -ForegroundColor White
 Write-Host "  Lab: $labName | Domain: $domainName | Site: $siteCode" -ForegroundColor DarkGray
 $script:deployStartTime = Get-Date
 Write-Host "  Started: $($script:deployStartTime.ToString('yyyy-MM-dd HH:mm:ss'))" -ForegroundColor DarkGray
+
+# ── Password security check ──────────────────────────────────────────────────
+$defaultPasswords = @('P@ssw0rd!', 'P@ssw0rd!Push1', 'P@ssw0rd!NAA1', 'P@ssw0rd!Admin1')
+$allPasswords = @(
+    $Config.AdminPass
+    $Config.ServiceAccounts.ClientPush.Password
+    $Config.ServiceAccounts.NAA.Password
+    $Config.ServiceAccounts.Admin.Password
+)
+$usingDefaults = ($allPasswords | Where-Object { $_ -in $defaultPasswords }).Count
+if ($usingDefaults -gt 0) {
+    Write-Host ''
+    Write-Host '  !! WARNING: DEFAULT PASSWORDS DETECTED !!' -ForegroundColor Red
+    Write-Host "  $usingDefaults of $($allPasswords.Count) passwords in config.psd1 are still defaults." -ForegroundColor Red
+    Write-Host '  These passwords are published in source control.' -ForegroundColor Red
+    Write-Host '  Change them in config.psd1 before deploying to any network.' -ForegroundColor Red
+    Write-Host ''
+}
 
 ###############################################################################
 # PHASE 1: PREREQUISITES
@@ -123,11 +185,22 @@ Write-Host "`n--- AutomatedLab ---" -ForegroundColor White
 $vendoredAL = Join-Path $PSScriptRoot 'lib\AutomatedLab'
 $moduleDirs = Get-ChildItem $vendoredAL -Directory | Where-Object { Test-Path (Join-Path $_.FullName '*.psd1') }
 
+# Unload any previously imported AL modules (DLLs lock files)
+Get-Module AutomatedLab* | Remove-Module -Force -ErrorAction SilentlyContinue
+Get-Module PSFramework | Remove-Module -Force -ErrorAction SilentlyContinue
+
 $targetPath = Join-Path $env:ProgramFiles 'WindowsPowerShell\Modules'
 foreach ($mod in $moduleDirs) {
     $dest = Join-Path $targetPath $mod.Name
     # Always overwrite to ensure vendored fixes are applied
-    if (Test-Path $dest) { Remove-Item $dest -Recurse -Force }
+    if (Test-Path $dest) {
+        try {
+            Remove-Item $dest -Recurse -Force
+        } catch {
+            # DLL may still be locked by another process -- overwrite in place
+            Write-Status "Could not remove $($mod.Name), overwriting in place" -Level WARN
+        }
+    }
     Copy-Item $mod.FullName $dest -Recurse -Force
     Write-Status "Installed: $($mod.Name)" -Level INFO
 }
@@ -135,17 +208,7 @@ foreach ($mod in $moduleDirs) {
 # Remove non-essential modules that cause parse errors (Recipe, Ships)
 foreach ($removeMod in @('AutomatedLab.Recipe', 'AutomatedLab.Ships', 'AutomatedLabTest')) {
     $removePath = Join-Path $targetPath $removeMod
-    if (Test-Path $removePath) { Remove-Item $removePath -Recurse -Force }
-}
-
-# Patch manifest to remove references to removed modules
-$manifestPath = Get-ChildItem (Join-Path $targetPath 'AutomatedLab') -Filter 'AutomatedLab.psd1' -Recurse | Select-Object -First 1
-if ($manifestPath) {
-    $content = Get-Content $manifestPath.FullName -Raw
-    $content = $content -replace ".*AutomatedLab\.Recipe.*\r?\n", ''
-    $content = $content -replace ".*AutomatedLab\.Ships.*\r?\n", ''
-    $content = $content -replace ".*AutomatedLabTest.*\r?\n", ''
-    Set-Content $manifestPath.FullName -Value $content
+    if (Test-Path $removePath) { Remove-Item $removePath -Recurse -Force -ErrorAction SilentlyContinue }
 }
 
 $al = Get-Module AutomatedLab -ListAvailable |
@@ -277,6 +340,40 @@ Write-Status 'ConfigMgr 2509 source found'
 Write-Status 'ADK setup found'
 Write-Status 'ADK PE setup found'
 
+# ── 1.6 Resolve OS edition names from ISOs ──────────────────────────────────
+
+Write-Host "`n--- OS Edition Detection ---" -ForegroundColor White
+
+$availableOS = Get-LabAvailableOperatingSystem -Path $isoPath -NoDisplay -ErrorAction SilentlyContinue
+if (-not $availableOS) {
+    throw "No operating systems found in ISOs at $isoPath. Verify your ISO files are valid."
+}
+
+$serverOS = ($availableOS | Where-Object OperatingSystemName -like $Config.ServerOSFilter |
+    Sort-Object Version -Descending | Select-Object -First 1).OperatingSystemName
+$clientOS = ($availableOS | Where-Object OperatingSystemName -like $Config.ClientOSFilter |
+    Sort-Object Version -Descending | Select-Object -First 1).OperatingSystemName
+
+if (-not $serverOS) {
+    Write-Status "No server OS matching '$($Config.ServerOSFilter)'" -Level FAIL
+    Write-Host '  Available:' -ForegroundColor DarkGray
+    $availableOS | Where-Object OperatingSystemName -like '*Server*' | ForEach-Object {
+        Write-Host "    $($_.OperatingSystemName)" -ForegroundColor DarkGray
+    }
+    throw "No server OS found matching filter '$($Config.ServerOSFilter)'. Update ServerOSFilter in config.psd1."
+}
+if (-not $clientOS) {
+    Write-Status "No client OS matching '$($Config.ClientOSFilter)'" -Level FAIL
+    Write-Host '  Available:' -ForegroundColor DarkGray
+    $availableOS | Where-Object OperatingSystemName -like '*Windows 1*' | ForEach-Object {
+        Write-Host "    $($_.OperatingSystemName)" -ForegroundColor DarkGray
+    }
+    throw "No client OS found matching filter '$($Config.ClientOSFilter)'. Update ClientOSFilter in config.psd1."
+}
+
+Write-Status "Server OS: $serverOS"
+Write-Status "Client OS: $clientOS"
+
 ###############################################################################
 # PHASE 2: OFFLINE DOWNLOADS
 ###############################################################################
@@ -337,22 +434,9 @@ if ($existingLabs -contains $labName) {
         Write-Host "  Removing existing lab '$labName'..." -ForegroundColor Yellow
         Remove-Lab -Name $labName -Confirm:$false
     } else {
-        Write-Host ''
-        Write-Host "  Lab '$labName' already exists." -ForegroundColor Yellow
-        Write-Host "  Use -RemoveExisting to auto-remove, or remove manually:" -ForegroundColor Yellow
-        Write-Host "    Remove-Lab -Name $labName" -ForegroundColor White
-        Write-Host ''
-
-        # If the lab exists and we're not removing it, try to import it
-        # and skip ahead to check what's already done
-        $response = Read-Host "  Remove and recreate? (y/N)"
-        if ($response -ne 'y') {
-            Write-Host "  Attempting to import existing lab and continue..." -ForegroundColor Yellow
-            Import-Lab -Name $labName -ErrorAction Stop
-            # Fall through -- idempotent steps will skip what's already done
-        } else {
-            Remove-Lab -Name $labName -Confirm:$false
-        }
+        # Lab exists -- import it and continue (idempotent phases will skip what's done)
+        Write-Status "Lab '$labName' already exists -- importing and continuing" -Level INFO
+        Import-Lab -Name $labName -ErrorAction Stop
     }
 }
 
@@ -419,7 +503,7 @@ if (-not $labImported) {
         -Processors $Config.DC.Processors `
         -NetworkAdapter $dcNics `
         -DomainName $domainName `
-        -OperatingSystem 'Windows Server 2025 Datacenter Evaluation (Desktop Experience)'
+        -OperatingSystem $serverOS
 
     Write-Status "DC01 defined: $($Config.DC.IP), $([math]::Round($Config.DC.Memory/1GB))GB RAM, $($Config.DC.Processors) vCPU"
 
@@ -455,7 +539,7 @@ if (-not $labImported) {
         -DiskName 'CM01-SQL', 'CM01-Data' `
         -NetworkAdapter $cmNics `
         -DomainName $domainName `
-        -OperatingSystem 'Windows Server 2025 Datacenter Evaluation (Desktop Experience)'
+        -OperatingSystem $serverOS
 
     Write-Status "CM01 defined: $($Config.CM.IP), $([math]::Round($Config.CM.Memory/1GB))GB RAM, $($Config.CM.Processors) vCPU, SQL+CM roles"
 
@@ -472,7 +556,7 @@ if (-not $labImported) {
         -Processors $Config.Client.Processors `
         -NetworkAdapter $clientNics `
         -DomainName $domainName `
-        -OperatingSystem 'Windows 11 Enterprise Evaluation' `
+        -OperatingSystem $clientOS `
         -SkipDeployment
     Write-Status "CLIENT01 defined (will deploy after DC+CM)" -Level INFO
 
@@ -502,15 +586,18 @@ if (-not $labImported) {
 
     # Validate CM — SMS_EXECUTIVE may need time to start after install+reboot
     Write-Status 'Waiting for SMS_EXECUTIVE service...' -Level RUN
+    $cmRunning = $false
     for ($attempt = 1; $attempt -le 12; $attempt++) {
-        $cmRunning = Invoke-LabCommand -ComputerName $Config.CM.Name -PassThru -ScriptBlock {
+        $result = Invoke-LabCommand -ComputerName $Config.CM.Name -ActivityName 'Check SMS_EXECUTIVE service' -PassThru -ScriptBlock {
             (Get-Service SMS_EXECUTIVE -ErrorAction SilentlyContinue).Status -eq 'Running'
         }
-        if ($cmRunning -eq $true) { break }
-        Write-Host "  Attempt $attempt/12 — waiting 30s..." -ForegroundColor DarkGray
+        # Invoke-LabCommand -PassThru may return PSObject wrapping the bool — cast explicitly
+        $cmRunning = [bool]($result | Select-Object -First 1)
+        if ($cmRunning) { break }
+        Write-Host "  Attempt $attempt/12 -- waiting 30s..." -ForegroundColor DarkGray
         Start-Sleep -Seconds 30
     }
-    if ($cmRunning -eq $true) {
+    if ($cmRunning) {
         Write-Status 'ConfigMgr verified: SMS_EXECUTIVE running' -Level OK
     } else {
         Write-Status 'SMS_EXECUTIVE not running after 6 minutes. Check ConfigMgrSetup.log on CM01.' -Level WARN
@@ -521,7 +608,18 @@ if (-not $labImported) {
     $clientVM = Get-LabVM -ComputerName $Config.Client.Name -ErrorAction SilentlyContinue
     if ($clientVM -and $clientVM.SkipDeployment) {
         $clientVM.SkipDeployment = $false
-        Install-Lab -NoValidation
+        try {
+            Install-Lab -NoValidation
+        } catch {
+            # Install-Lab re-iterates all roles (SQL, CM) for idempotency.
+            # CM update validation may fail on fresh labs (no updates synced yet).
+            $runningClient = Get-VM -Name $Config.Client.Name -ErrorAction SilentlyContinue | Where-Object State -eq 'Running'
+            if ($runningClient) {
+                Write-Status "Install-Lab reported errors but CLIENT01 is running. Continuing." -Level WARN
+            } else {
+                Write-Status "CLIENT01 deployment failed: $($_.Exception.Message)" -Level FAIL
+            }
+        }
         Write-Status "CLIENT01 deployed: $($Config.Client.IP)"
     } elseif (-not $clientVM) {
         Write-Status 'CLIENT01 not in lab definition — skipping' -Level WARN
@@ -534,11 +632,12 @@ if (-not $labImported) {
 
     # Verify CM is running on existing lab
     Import-Lab -Name $labName -NoValidation
-    $cmRunning = Invoke-LabCommand -ComputerName $Config.CM.Name -PassThru -ScriptBlock {
+    $result = Invoke-LabCommand -ComputerName $Config.CM.Name -ActivityName 'Check SMS_EXECUTIVE service' -PassThru -ScriptBlock {
         (Get-Service SMS_EXECUTIVE -ErrorAction SilentlyContinue).Status -eq 'Running'
     }
-    if (-not $cmRunning -or $cmRunning -ne $true) {
-        Write-Status 'SMS_EXECUTIVE not running — CM may still be initializing or was never installed. Check CM01 manually.' -Level WARN
+    $cmRunning = [bool]($result | Select-Object -First 1)
+    if (-not $cmRunning) {
+        Write-Status 'SMS_EXECUTIVE not running -- CM may still be initializing or was never installed. Check CM01 manually.' -Level WARN
     } else {
         Write-Status 'ConfigMgr verified: SMS_EXECUTIVE running' -Level OK
     }
@@ -570,24 +669,6 @@ if ($cmVM) {
     Write-Status 'CM01 VM not found -- cannot expand disk' -Level FAIL
 }
 
-# ── 3.4 Configure SQL Memory ─────────────────────────────────────────────────
-
-Write-Host "`n--- Configuring SQL Server Memory ---" -ForegroundColor White
-
-Invoke-LabCommand -ComputerName $Config.CM.Name -ActivityName 'Configure SQL memory' -ScriptBlock {
-    $sqlSvc = Get-Service MSSQLSERVER -ErrorAction SilentlyContinue
-    if ($sqlSvc -and $sqlSvc.Status -eq 'Running') {
-        Invoke-Sqlcmd -Query @"
-EXEC sp_configure 'show advanced options', 1;
-RECONFIGURE;
-EXEC sp_configure 'min server memory', 8192;
-EXEC sp_configure 'max server memory', 8192;
-RECONFIGURE;
-"@
-    }
-}
-Write-Status 'SQL memory set to 8GB min/max'
-
 $cmName = $Config.CM.Name
 $domainDN = ($domainName -split '\.' | ForEach-Object { "DC=$_" }) -join ','
 
@@ -597,98 +678,96 @@ $domainDN = ($domainName -split '\.' | ForEach-Object { "DC=$_" }) -join ','
 
 Write-Step 'Phase 4: Service Accounts'
 
-# Write a script file to copy to DC01 and execute there, to avoid
-# splatting/pipeline issues through remoting layers.
+try {
 
-$svcAccountScript = @"
-
-Import-Module ActiveDirectory
-
-`$domainDN = '$domainDN'
-`$domainName = '$domainName'
-`$netbios = '$netbios'
-`$ouName = 'Service Accounts'
-`$ouPath = "OU=`$ouName,`$domainDN"
-
-# Create OU if needed
-`$existingOU = Get-ADOrganizationalUnit -Filter "DistinguishedName -eq '`$ouPath'" -ErrorAction SilentlyContinue
-if (-not `$existingOU) {
-    New-ADOrganizationalUnit -Name `$ouName -Path `$domainDN
-    Write-Host "Created OU: `$ouPath"
-} else {
-    Write-Host "OU already exists: `$ouPath"
-}
-
-# Account definitions
-`$accounts = @(
+# Build accounts array on the host, pass via -ArgumentList (no string interpolation of passwords)
+$svcAccounts = @(
     @{
-        Sam  = '$($Config.ServiceAccounts.ClientPush.Name)'
+        Sam  = $Config.ServiceAccounts.ClientPush.Name
         Full = 'MECM Client Push'
-        UPN  = '$($Config.ServiceAccounts.ClientPush.Name)@$domainName'
-        Pass = '$($Config.ServiceAccounts.ClientPush.Password)'
-        Desc = '$($Config.ServiceAccounts.ClientPush.Desc)'
+        Pass = $Config.ServiceAccounts.ClientPush.Password
+        Desc = $Config.ServiceAccounts.ClientPush.Desc
     },
     @{
-        Sam  = '$($Config.ServiceAccounts.NAA.Name)'
+        Sam  = $Config.ServiceAccounts.NAA.Name
         Full = 'MECM Network Access Account'
-        UPN  = '$($Config.ServiceAccounts.NAA.Name)@$domainName'
-        Pass = '$($Config.ServiceAccounts.NAA.Password)'
-        Desc = '$($Config.ServiceAccounts.NAA.Desc)'
+        Pass = $Config.ServiceAccounts.NAA.Password
+        Desc = $Config.ServiceAccounts.NAA.Desc
     },
     @{
-        Sam  = '$($Config.ServiceAccounts.Admin.Name)'
+        Sam  = $Config.ServiceAccounts.Admin.Name
         Full = 'MECM Admin'
-        UPN  = '$($Config.ServiceAccounts.Admin.Name)@$domainName'
-        Pass = '$($Config.ServiceAccounts.Admin.Password)'
-        Desc = '$($Config.ServiceAccounts.Admin.Desc)'
+        Pass = $Config.ServiceAccounts.Admin.Password
+        Desc = $Config.ServiceAccounts.Admin.Desc
     }
 )
 
-foreach (`$acct in `$accounts) {
-    `$existing = Get-ADUser -Filter "SamAccountName -eq '`$(`$acct.Sam)'" -ErrorAction SilentlyContinue
-    if (-not `$existing) {
-        New-ADUser -Name `$acct.Full ``
-            -SamAccountName `$acct.Sam ``
-            -UserPrincipalName `$acct.UPN ``
-            -Path `$ouPath ``
-            -AccountPassword (ConvertTo-SecureString `$acct.Pass -AsPlainText -Force) ``
-            -PasswordNeverExpires `$true ``
-            -CannotChangePassword `$true ``
-            -Enabled `$true ``
-            -Description `$acct.Desc
-        Write-Host "Created: `$netbios\`$(`$acct.Sam)"
-    } else {
-        Write-Host "Exists: `$netbios\`$(`$acct.Sam)"
-    }
+# Group memberships: hashtable of group name -> array of account SAMs to add
+$groupMemberships = @{
+    'Domain Admins'        = @($Config.ServiceAccounts.ClientPush.Name, $Config.ServiceAccounts.Admin.Name)
+    'Remote Desktop Users' = @($Config.ServiceAccounts.Admin.Name)
 }
-
-# Group memberships
-Add-ADGroupMember -Identity 'Domain Admins' -Members '$($Config.ServiceAccounts.ClientPush.Name)' -ErrorAction SilentlyContinue
-Add-ADGroupMember -Identity 'Domain Admins' -Members '$($Config.ServiceAccounts.Admin.Name)' -ErrorAction SilentlyContinue
-Add-ADGroupMember -Identity 'Remote Desktop Users' -Members '$($Config.ServiceAccounts.Admin.Name)' -ErrorAction SilentlyContinue
-
-Write-Host "`nService accounts configured successfully."
-"@
-
-# Write the script to a temp file, copy to DC01, run it
-$tempScript = Join-Path $env:TEMP 'Create-ServiceAccounts.ps1'
-$svcAccountScript | Set-Content -Path $tempScript -Encoding ASCII -Force
-
-Copy-LabFileItem -Path $tempScript -ComputerName $Config.DC.Name -DestinationFolderPath 'C:\Install'
 
 Invoke-LabCommand -ComputerName $Config.DC.Name -ActivityName 'Create service accounts' -ScriptBlock {
-    & 'C:\Install\Create-ServiceAccounts.ps1'
-}
+    param($DomainDN, $DomainName, $NetBIOS, $Accounts, $GroupMemberships)
 
-Remove-Item $tempScript -Force -ErrorAction SilentlyContinue
+    Import-Module ActiveDirectory
+
+    $ouName = 'Service Accounts'
+    $ouPath = "OU=$ouName,$DomainDN"
+
+    # Create OU if needed
+    $existingOU = Get-ADOrganizationalUnit -Filter "DistinguishedName -eq '$ouPath'" -ErrorAction SilentlyContinue
+    if (-not $existingOU) {
+        New-ADOrganizationalUnit -Name $ouName -Path $DomainDN
+        Write-Host "Created OU: $ouPath"
+    } else {
+        Write-Host "OU already exists: $ouPath"
+    }
+
+    # Create accounts
+    foreach ($acct in $Accounts) {
+        $existing = Get-ADUser -Filter "SamAccountName -eq '$($acct.Sam)'" -ErrorAction SilentlyContinue
+        if (-not $existing) {
+            New-ADUser -Name $acct.Full `
+                -SamAccountName $acct.Sam `
+                -UserPrincipalName "$($acct.Sam)@$DomainName" `
+                -Path $ouPath `
+                -AccountPassword (ConvertTo-SecureString $acct.Pass -AsPlainText -Force) `
+                -PasswordNeverExpires $true `
+                -CannotChangePassword $true `
+                -Enabled $true `
+                -Description $acct.Desc
+            Write-Host "Created: $NetBIOS\$($acct.Sam)"
+        } else {
+            Write-Host "Exists: $NetBIOS\$($acct.Sam)"
+        }
+    }
+
+    # Group memberships
+    foreach ($group in $GroupMemberships.Keys) {
+        foreach ($member in $GroupMemberships[$group]) {
+            Add-ADGroupMember -Identity $group -Members $member -ErrorAction SilentlyContinue
+        }
+    }
+
+    Write-Host 'Service accounts configured successfully.'
+} -ArgumentList $domainDN, $domainName, $netbios, $svcAccounts, $groupMemberships
 
 Write-Status "Service accounts created ($($Config.ServiceAccounts.ClientPush.Name), $($Config.ServiceAccounts.NAA.Name), $($Config.ServiceAccounts.Admin.Name))"
+
+} catch {
+    Write-Status "Service account creation failed: $($_.Exception.Message)" -Level FAIL
+    Write-Status 'DC01 may be unresponsive. Verify DC01 is running, then re-run this script.' -Level WARN
+}
 
 ###############################################################################
 # PHASE 5: CONTENT SHARE
 ###############################################################################
 
 Write-Step 'Phase 5: Content Share'
+
+try {
 
 $sharePath = 'E:\ContentShare'
 $shareName = 'ContentShare$'
@@ -736,11 +815,18 @@ Invoke-LabCommand -ComputerName $cmName -ActivityName 'Create content share' -Sc
 
 Write-Status "Content share created: \\$cmName\$shareName"
 
+} catch {
+    Write-Status "Content share creation failed: $($_.Exception.Message)" -Level FAIL
+    Write-Status 'CM01 may be unresponsive. Create the share manually after deployment.' -Level WARN
+}
+
 ###############################################################################
 # PHASE 6: MECM FULL ADMINISTRATOR
 ###############################################################################
 
 Write-Step 'Phase 6: Add svc-CMAdmin as MECM Full Administrator'
+
+try {
 
 Invoke-LabCommand -ComputerName $cmName -ActivityName 'Add MECM Full Administrator' -ScriptBlock {
     param($SiteCode, $AdminAccount)
@@ -816,11 +902,18 @@ Invoke-LabCommand -ComputerName $cmName -ActivityName 'Add MECM Full Administrat
 
 Write-Status "svc-CMAdmin MECM Full Administrator role configured"
 
+} catch {
+    Write-Status "MECM admin role assignment failed: $($_.Exception.Message)" -Level FAIL
+    Write-Status 'Add svc-CMAdmin as Full Administrator manually via the CM console.' -Level WARN
+}
+
 ###############################################################################
 # PHASE 7: DEPLOY TOOLS
 ###############################################################################
 
 Write-Step 'Phase 7: Deploy Tools to CM01'
+
+try {
 
 # Create tools directory on CM01
 Invoke-LabCommand -ComputerName $cmName -ActivityName 'Create Tools directory' -ScriptBlock {
@@ -860,6 +953,11 @@ if (Test-Path $appPkgSource) {
     Write-Status "ApplicationPackager not found at $appPkgSource -- skipping" -Level WARN
 }
 
+} catch {
+    Write-Status "Tool deployment failed: $($_.Exception.Message)" -Level FAIL
+    Write-Status 'Tools are optional. Copy them manually to C:\Tools on CM01.' -Level WARN
+}
+
 ###############################################################################
 # PHASE 8: SNAPSHOTS
 ###############################################################################
@@ -884,6 +982,7 @@ Write-Host '  =============================================' -ForegroundColor Gr
 Write-Host '   MECM HOME LAB DEPLOYMENT COMPLETE' -ForegroundColor Green
 Write-Host '  =============================================' -ForegroundColor Green
 Write-Host ''
+Write-Host "  Elapsed:    $($elapsed.Hours)h $($elapsed.Minutes)m $($elapsed.Seconds)s" -ForegroundColor DarkGray
 Write-Host "  Domain:     $domainName" -ForegroundColor White
 Write-Host "  Admin:      $domainName\$($Config.AdminUser)" -ForegroundColor White
 Write-Host "  Password:   $($Config.AdminPass)" -ForegroundColor White
@@ -937,3 +1036,10 @@ Write-Host "     > Configure Site Components > Software Distribution > NAA > Add
 Write-Host ''
 Write-Host "  Finished at: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')" -ForegroundColor DarkGray
 Write-Host ''
+
+# Close log file
+if ($script:logStream) {
+    $script:logStream.Close()
+    $script:logStream.Dispose()
+    Write-Host "  Log saved to: $LogFile" -ForegroundColor DarkGray
+}

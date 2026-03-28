@@ -6,3 +6,4 @@ ConfigMgr_2509/
 
 # AutomatedLab runtime
 *.log
+project-manifest.json

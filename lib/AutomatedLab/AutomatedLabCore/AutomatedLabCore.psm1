@@ -20928,10 +20928,9 @@ GO
 
     if ($onPremisesMachines)
     {
-        $cppRedist64_2017 = Get-LabInternetFile -Uri (Get-LabConfigurationItem -Name cppredist64_2017) -Path $downloadTargetFolder -FileName vcredist_x64_2017.exe -PassThru
-        $cppredist32_2017 = Get-LabInternetFile -Uri (Get-LabConfigurationItem -Name cppredist32_2017) -Path $downloadTargetFolder -FileName vcredist_x86_2017.exe -PassThru
-        $cppRedist64_2015 = Get-LabInternetFile -Uri (Get-LabConfigurationItem -Name cppredist64_2015) -Path $downloadTargetFolder -FileName vcredist_x64_2015.exe -PassThru
-        $cppredist32_2015 = Get-LabInternetFile -Uri (Get-LabConfigurationItem -Name cppredist32_2015) -Path $downloadTargetFolder -FileName vcredist_x86_2015.exe -PassThru
+        # All VC++ URLs point to latest (14.50) — download once per architecture, not per legacy version
+        $cppRedist64 = Get-LabInternetFile -Uri (Get-LabConfigurationItem -Name cppredist64_2017) -Path $downloadTargetFolder -FileName vcredist_x64.exe -PassThru
+        $cppredist32 = Get-LabInternetFile -Uri (Get-LabConfigurationItem -Name cppredist32_2017) -Path $downloadTargetFolder -FileName vcredist_x86.exe -PassThru
 
         $parallelInstalls = 4
         Write-ScreenInfo -Type Verbose -Message "Parallel installs: $parallelInstalls"
@@ -20955,14 +20954,9 @@ GO
             Wait-LWLabJob -Job $installFrameworkJobs -Timeout 10 -NoDisplay -NoNewLine
             Write-ScreenInfo -Message 'done'
 
-            Write-ScreenInfo -Message "Starting installation of pre-requisite C++ 2015 redist on machine '$($machinesBatch -join ', ')'" -NoNewLine
-            Install-LabSoftwarePackage -Path $cppredist32_2015.FullName -CommandLine " /quiet /norestart /log `"$deployDebugPath\cpp32_2015.log`"" -ComputerName $machinesBatch -ExpectedReturnCodes 0,3010 -AsScheduledJob -NoDisplay
-            Install-LabSoftwarePackage -Path $cppRedist64_2015.FullName -CommandLine " /quiet /norestart /log `"$deployDebugPath\cpp64_2015.log`"" -ComputerName $machinesBatch -ExpectedReturnCodes 0,3010 -AsScheduledJob -NoDisplay
-            Write-ScreenInfo -Message 'done'
-
-            Write-ScreenInfo -Message "Starting installation of pre-requisite C++ 2017 redist on machine '$($machinesBatch -join ', ')'" -NoNewLine
-            Install-LabSoftwarePackage -Path $cppredist32_2017.FullName -CommandLine " /quiet /norestart /log `"$deployDebugPath\cpp32_2017.log`"" -ComputerName $machinesBatch -ExpectedReturnCodes 0,3010 -AsScheduledJob -NoDisplay
-            Install-LabSoftwarePackage -Path $cppRedist64_2017.FullName -CommandLine " /quiet /norestart /log `"$deployDebugPath\cpp64_2017.log`"" -ComputerName $machinesBatch -ExpectedReturnCodes 0,3010 -AsScheduledJob -NoDisplay
+            Write-ScreenInfo -Message "Starting installation of pre-requisite VC++ runtimes (latest) on machine '$($machinesBatch -join ', ')'" -NoNewLine
+            Install-LabSoftwarePackage -Path $cppredist32.FullName -CommandLine " /quiet /norestart /log `"$deployDebugPath\cpp32.log`"" -ComputerName $machinesBatch -ExpectedReturnCodes 0,3010 -AsScheduledJob -NoDisplay
+            Install-LabSoftwarePackage -Path $cppRedist64.FullName -CommandLine " /quiet /norestart /log `"$deployDebugPath\cpp64.log`"" -ComputerName $machinesBatch -ExpectedReturnCodes 0,3010 -AsScheduledJob -NoDisplay
             Write-ScreenInfo -Message 'done'
 
             Write-ScreenInfo -Message "Restarting '$($machinesBatch -join ', ')'" -NoNewLine

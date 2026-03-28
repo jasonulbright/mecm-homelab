@@ -500,15 +500,20 @@ if (-not $labImported) {
     Write-Status 'DC01 + CM01 deployed'
     Write-Host "  Finished at: $(Get-Date -Format 'HH:mm:ss')" -ForegroundColor DarkGray
 
-    # Validate CM is actually installed — Install-Lab may have caught a CM error and continued
-    $cmInstalled = Invoke-LabCommand -ComputerName $Config.CM.Name -PassThru -ScriptBlock {
-        (Get-Service SMS_EXECUTIVE -ErrorAction SilentlyContinue).Status -eq 'Running'
+    # Validate CM — SMS_EXECUTIVE may need time to start after install+reboot
+    Write-Status 'Waiting for SMS_EXECUTIVE service...' -Level RUN
+    for ($attempt = 1; $attempt -le 12; $attempt++) {
+        $cmRunning = Invoke-LabCommand -ComputerName $Config.CM.Name -PassThru -ScriptBlock {
+            (Get-Service SMS_EXECUTIVE -ErrorAction SilentlyContinue).Status -eq 'Running'
+        }
+        if ($cmRunning -eq $true) { break }
+        Write-Host "  Attempt $attempt/12 — waiting 30s..." -ForegroundColor DarkGray
+        Start-Sleep -Seconds 30
     }
-    if (-not $cmInstalled -or $cmInstalled -ne $true) {
-        Write-Status 'ConfigMgr not detected — retrying Install-LabConfigurationManager...' -Level WARN
-        Install-LabConfigurationManager
-    } else {
+    if ($cmRunning -eq $true) {
         Write-Status 'ConfigMgr verified: SMS_EXECUTIVE running' -Level OK
+    } else {
+        Write-Status 'SMS_EXECUTIVE not running after 6 minutes. Check ConfigMgrSetup.log on CM01.' -Level WARN
     }
 
     # ── CLIENT01: Deploy now that DC+CM are up (avoids RAM contention during AD/SQL) ──
@@ -527,14 +532,13 @@ if (-not $labImported) {
 } else {
     Write-Status "Lab '$labName' already deployed -- skipping VM creation" -Level SKIP
 
-    # Even if lab exists, CM may not be installed (previous run may have failed during CM setup)
+    # Verify CM is running on existing lab
     Import-Lab -Name $labName -NoValidation
-    $cmInstalled = Invoke-LabCommand -ComputerName $Config.CM.Name -PassThru -ScriptBlock {
+    $cmRunning = Invoke-LabCommand -ComputerName $Config.CM.Name -PassThru -ScriptBlock {
         (Get-Service SMS_EXECUTIVE -ErrorAction SilentlyContinue).Status -eq 'Running'
     }
-    if (-not $cmInstalled -or $cmInstalled -ne $true) {
-        Write-Status 'ConfigMgr not detected — running Install-LabConfigurationManager...' -Level WARN
-        Install-LabConfigurationManager
+    if (-not $cmRunning -or $cmRunning -ne $true) {
+        Write-Status 'SMS_EXECUTIVE not running — CM may still be initializing or was never installed. Check CM01 manually.' -Level WARN
     } else {
         Write-Status 'ConfigMgr verified: SMS_EXECUTIVE running' -Level OK
     }

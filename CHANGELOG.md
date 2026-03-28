@@ -1,5 +1,39 @@
 # Changelog
 
+## [2.1.0] - 2026-03-28
+
+### Security
+- **Default password warning** -- script warns loudly at startup if any passwords in config.psd1 are still defaults. Passwords are published in source control and must be changed before deployment.
+- **Service account password injection fixed** -- passwords are now passed via `-ArgumentList` instead of string-interpolated into a here-string script. Passwords containing `'` or `$` no longer break the generated script.
+
+### Changed
+- **Dynamic OS resolution** -- OS edition names (e.g., "Windows Server 2025 Datacenter Evaluation") are now detected automatically from ISO WIM contents via `Get-LabAvailableOperatingSystem`. Wildcard filters in config.psd1 (`ServerOSFilter`, `ClientOSFilter`) match any edition.
+- **Non-interactive** -- removed `Read-Host` prompt when lab already exists. Script now imports and continues (idempotent). Use `-RemoveExisting` to recreate.
+- **SQL memory handled by AutomatedLab** -- removed duplicate SQL memory config from wrapper (Phase 3.4). The fork already configures SQL memory before CM setup.
+- **Manifest patching removed** -- vendored manifest is pre-patched. No regex replacement at runtime.
+- **Elapsed time displayed** in completion banner.
+
+### Added
+- `Update-VendoredModules.ps1` -- copies built modules from the AutomatedLab fork into `lib/AutomatedLab/`
+- `Tests/Deploy-HomeLab.Tests.ps1` -- 29 Pester tests covering config structure, password security, OS filters, script structure, and vendored module integrity
+- try/catch with recovery guidance on Phases 4-7 (service accounts, content share, MECM admin, tools)
+- `ServerOSFilter` and `ClientOSFilter` in config.psd1
+
+### Fixed
+- **PSObject serialization on SMS_EXECUTIVE check** -- `Invoke-LabCommand -PassThru` result cast with `[bool]($result | Select-Object -First 1)` to handle PSObject wrapping
+- **AV exclusion SQL path** -- `MSSQL14.MSSQLSERVER` (SQL 2017) updated to `MSSQL16.MSSQLSERVER` (SQL 2022) in AutomatedLab fork
+- **CLIENT01 Install-Lab crash** -- second `Install-Lab` call for CLIENT01 wrapped in try/catch (CM update validation threw on null update packages)
+- **DLL lock on module copy** -- `Remove-Item` failure on locked DLLs caught with try/catch, falls back to overwrite-in-place
+
+### Fixed (AutomatedLab fork -- vendored)
+- **Update-CMSite null array crash** -- graceful skip when no update packages synced
+- **Site-already-installed skip** -- prevents redundant 30-min update polling on re-runs
+- **SSRS error noise suppressed** -- `-ErrorAction SilentlyContinue` on SSRS install/config
+- **Version check suppressed** -- forced `DisableVersionCheck = $true` overriding persisted values
+- **Unnamed activity labels** -- 5 `Invoke-LabCommand` calls given descriptive `-ActivityName`
+
+---
+
 ## [2.0.0] - 2026-03-26
 
 ### Changed

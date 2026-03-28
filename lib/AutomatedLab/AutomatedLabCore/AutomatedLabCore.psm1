@@ -1304,7 +1304,7 @@ function Install-CMSite
         $DatabaseName = "CM_$CMSiteCode"
     }
 
-    Invoke-LabCommand -ComputerName $DCServerName -Variable (Get-Variable labCred, AdminUser) -ScriptBlock {
+    Invoke-LabCommand -ComputerName $DCServerName -ActivityName 'Ensure CM admin user exists in AD' -Variable (Get-Variable labCred, AdminUser) -ScriptBlock {
         try
         {
             $usr = Get-ADUser -Identity $AdminUser -ErrorAction Stop
@@ -5843,8 +5843,12 @@ function Update-CMSite
     }
 
     # https://github.com/PowerShell/PowerShell/issues/9185
+    if (-not $Update) {
+        Write-ScreenInfo -Message "No CM update packages found after 30 minutes. Service connection point may not have synced yet. Skipping update -- site is functional at the installed baseline version." -Type Warning -TaskEnd
+        return
+    }
     $Update = $Update[0]
-    
+
     # On some occasions, the update was already "ready to install"
     if ($Update.State -eq [SMS_CM_UpdatePackages_State]::ReadyToInstall)
     {
@@ -10659,7 +10663,7 @@ function Install-LabConfigurationManager
     }
 
     # Set up VM install directory
-    $deployDebugPathResults = Invoke-LabCommand -ComputerName $vms -ScriptBlock {
+    $deployDebugPathResults = Invoke-LabCommand -ComputerName $vms -ActivityName 'Create VM install directory' -ScriptBlock {
         (New-Item -ItemType Directory -Path $ExecutionContext.InvokeCommand.ExpandString($AL_DeployDebugFolder) -ErrorAction SilentlyContinue -Force).FullName
     } -PassThru -Variable (Get-Variable -Name AL_DeployDebugFolder -Scope Global)
     $deployDebugPath = if ($deployDebugPathResults -is [array]) { [string]$deployDebugPathResults[0] } else { [string]$deployDebugPathResults }
@@ -10707,7 +10711,7 @@ function Install-LabConfigurationManager
 
     #region VC++, ODBC -- skip if already installed (SQL setup installs these as prereqs)
     # Note: MSOLEDB is NOT a CM prerequisite per Microsoft docs. CM only requires ODBC 18 and SQL Native Client.
-    $prereqStatus = Invoke-LabCommand -ComputerName ($vms | Select-Object -First 1) -PassThru -ScriptBlock {
+    $prereqStatus = Invoke-LabCommand -ComputerName ($vms | Select-Object -First 1) -ActivityName 'Check installed prerequisites' -PassThru -ScriptBlock {
         $vcInstalled = (Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\VisualStudio\14.0\VC\Runtimes\X64' -ErrorAction SilentlyContinue).Installed -eq 1
         $odbcInstalled = $null -ne (Get-ItemProperty 'HKLM:\SOFTWARE\ODBC\ODBCINST.INI\ODBC Driver 18 for SQL Server' -ErrorAction SilentlyContinue)
         @{ VC = $vcInstalled; ODBC = $odbcInstalled }
@@ -11017,15 +11021,22 @@ RECONFIGURE;
         Write-ScreenInfo -Message "Activity done" -TaskEnd
         #endregion
 
-        Install-CMSite @siteParameter
+        # Check if site is already installed before running setup + update
+        $cim = New-LabCimSession -ComputerName $vm
+        $existingSite = Get-CimInstance -Namespace "ROOT/SMS/site_$($siteParameter.CMSiteCode)" -ClassName SMS_Site -ErrorAction SilentlyContinue -CimSession $cim
+        if ($existingSite) {
+            Write-ScreenInfo -Message "Site '$($siteParameter.CMSiteCode)' already installed on '$vm', skipping setup and update" -Type Warning
+        } else {
+            Install-CMSite @siteParameter
 
-        Restart-LabVM -ComputerName $vm
+            Restart-LabVM -ComputerName $vm
 
-        if (Test-LabMachineInternetConnectivity -ComputerName $vm)
-        {
-            Write-ScreenInfo -Type Verbose -Message "$vm is connected, beginning update process"
-            $updateParameter = Sync-Parameter -Command (Get-Command Update-CMSite) -Parameters $siteParameter
-            Update-CMSite @updateParameter
+            if (Test-LabMachineInternetConnectivity -ComputerName $vm)
+            {
+                Write-ScreenInfo -Type Verbose -Message "$vm is connected, beginning update process"
+                $updateParameter = Sync-Parameter -Command (Get-Command Update-CMSite) -Parameters $siteParameter
+                Update-CMSite @updateParameter
+            }
         }
     }
     #endregion
@@ -20869,7 +20880,7 @@ function Install-LabSqlServers
 
     $machines = Get-LabVM -Role SQLServer | Where-Object SkipDeployment -eq $false
     
-    $deployDebugPath = Invoke-LabCommand -ComputerName $machines -ScriptBlock {
+    $deployDebugPath = Invoke-LabCommand -ComputerName $machines -ActivityName 'Create SQL install directory' -ScriptBlock {
         (New-Item -ItemType Directory -Path $ExecutionContext.InvokeCommand.ExpandString($AL_DeployDebugFolder) -ErrorAction SilentlyContinue -Force).FullName
     } -Variable (Get-Variable -Scope Global -Name AL_DeployDebugFolder) -PassThru | Select-Object -First 1
 
@@ -21271,11 +21282,11 @@ GO
 
         Install-LabSoftwarePackage -Path $labsources\SoftwarePackages\ReportBuilder.msi -ComputerName $server
         try {
-            Install-LabSoftwarePackage -Path $downloadFolder\SQLServerReportingServices.exe -CommandLine '/Quiet /IAcceptLicenseTerms' -ComputerName $server
-            Invoke-LabCommand -ActivityName 'Configuring SSRS' -ComputerName $server -FilePath $labSources\PostInstallationActivities\SqlServer\SetupSqlServerReportingServices.ps1
+            Install-LabSoftwarePackage -Path $downloadFolder\SQLServerReportingServices.exe -CommandLine '/Quiet /IAcceptLicenseTerms' -ComputerName $server -ErrorAction SilentlyContinue
+            Invoke-LabCommand -ActivityName 'Configuring SSRS' -ComputerName $server -FilePath $labSources\PostInstallationActivities\SqlServer\SetupSqlServerReportingServices.ps1 -ErrorAction SilentlyContinue
         }
         catch {
-            Write-ScreenInfo -Message "SSRS installation/configuration failed: $($_.Exception.Message). SSRS is optional -- continuing." -Type Warning
+            Write-ScreenInfo -Message "SSRS installation failed on $server. SSRS is optional -- continuing." -Type Warning
         }
     }
     #endregion
@@ -25257,7 +25268,9 @@ else {
 }
 Set-PSFConfig -Module 'AutomatedLab' -Name LabAppDataRoot -Value $labAppDataRoot -Initialize -Validation string -Description "Root folder to Labs, Assets and Stores"
 # Version check disabled — this is a community fork, not the upstream PSGallery release
+# Using -Initialize AND explicit Set-PSFConfig to override any persisted PSGallery value
 Set-PSFConfig -Module 'AutomatedLab' -Name 'DisableVersionCheck' -Value $true -Initialize -Validation bool -Description 'Set to true to skip checking GitHub for an updated AutomatedLab release'
+Set-PSFConfig -Module 'AutomatedLab' -Name 'DisableVersionCheck' -Value $true
 
 
 Set-PSFConfig -Module 'AutomatedLab' -Name 'Notifications.NotificationProviders.Ifttt.Key' -Value 'Your IFTTT key here' -Initialize -Validation string -Description "IFTTT Key Name"
@@ -28633,7 +28646,7 @@ $adInstallDcPre2012 = {
 $configurationManagerAVExcludedPaths = @(
     'C:\Install'
     'C:\Install\CM\SMSSETUP\BIN\X64\setup.exe'
-    'C:\Program Files\Microsoft SQL Server\MSSQL14.MSSQLSERVER\MSSQL\Binn\sqlservr.exe'
+    'C:\Program Files\Microsoft SQL Server\MSSQL16.MSSQLSERVER\MSSQL\Binn\sqlservr.exe'
     'C:\Program Files\Microsoft SQL Server Reporting Services\SSRS\ReportServer\bin\ReportingServicesService.exe'
     'C:\Program Files\Microsoft Configuration Manager'
     'C:\Program Files\Microsoft Configuration Manager\Inboxes'
@@ -28658,7 +28671,7 @@ $configurationManagerAVExcludedPaths = @(
 )
 $configurationManagerAVExcludedProcesses = @(
     'C:\Install\CM\SMSSETUP\BIN\X64\setup.exe'
-    'C:\Program Files\Microsoft SQL Server\MSSQL14.MSSQLSERVER\MSSQL\Binn\sqlservr.exe'
+    'C:\Program Files\Microsoft SQL Server\MSSQL16.MSSQLSERVER\MSSQL\Binn\sqlservr.exe'
     'C:\Program Files\Microsoft SQL Server Reporting Services\SSRS\ReportServer\bin\ReportingServicesService.exe'
     'C:\Program Files\Microsoft Configuration Manager\bin\x64\Smsexec.exe'
     'C:\Program Files\Microsoft Configuration Manager\bin\x64\Sitecomp.exe'

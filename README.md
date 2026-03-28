@@ -38,9 +38,11 @@ Download these before running the script:
 
 ODBC Driver 18.5.x and VC++ runtimes are downloaded automatically by AutomatedLab during deployment.
 
+OS edition names are detected automatically from your ISOs. The script matches against wildcard filters in `config.psd1` (`ServerOSFilter`, `ClientOSFilter`) so any edition (Standard, Datacenter, Evaluation, retail) works.
+
 ## Quick Start
 
-Enable Hyper-V first (reboot required). Download the ISOs and software above. Then run as **Administrator**:
+Enable Hyper-V first (reboot required). Download the ISOs and software above. **Change the passwords in `config.psd1`**, then run as **Administrator**:
 
 ```powershell
 .\Deploy-HomeLab.ps1
@@ -51,26 +53,39 @@ To remove an existing lab and redeploy:
 .\Deploy-HomeLab.ps1 -RemoveExisting
 ```
 
+If the lab already exists and `-RemoveExisting` is not specified, the script imports the existing lab and continues with the remaining idempotent phases.
+
 ## What the Script Does
 
 `Deploy-HomeLab.ps1` handles prerequisites and lab definition, then delegates to AutomatedLab for the heavy lifting:
 
 | Phase | Description |
 |-------|-------------|
-| 1. Prerequisites | Checks Hyper-V, host RAM, installs vendored AutomatedLab, creates LabSources, verifies ISOs |
+| 1. Prerequisites | Checks Hyper-V, host RAM, installs vendored AutomatedLab, creates LabSources, verifies ISOs, detects OS editions from WIM |
 | 2. Downloads | Creates ADK/PE offline layouts if needed |
-| 3. Lab Deployment | Defines DC01 + CM01 (with ConfigurationManager role) + CLIENT01, runs `Install-Lab`. AutomatedLab handles AD, CA, SQL, VC++, ODBC, ADK, and CM installation. CLIENT01 deferred until DC+CM are up. |
-| 4. Service Accounts | Creates svc-CMPush, svc-CMNAA, svc-CMAdmin |
-| 5. Content Share | Creates `E:\ContentShare` with SMB share on CM01 |
-| 6. MECM Admin | Adds svc-CMAdmin as MECM Full Administrator |
-| 7. Deploy Tools | Copies cc4cm and ApplicationPackager to CM01 |
+| 3. Lab Deployment | Defines DC01 + CM01 (with ConfigurationManager role) + CLIENT01, runs `Install-Lab`. AutomatedLab handles AD, CA, SQL, VC++, ODBC, ADK, SQL memory, and CM installation. CLIENT01 deferred until DC+CM are up. |
+| 4. Service Accounts | Creates svc-CMPush, svc-CMNAA, svc-CMAdmin (with error recovery) |
+| 5. Content Share | Creates `E:\ContentShare` with SMB share on CM01 (with error recovery) |
+| 6. MECM Admin | Adds svc-CMAdmin as MECM Full Administrator (with error recovery) |
+| 7. Deploy Tools | Copies cc4cm and ApplicationPackager to CM01 (optional, with error recovery) |
 | 8. Snapshots | Creates "Deployment-Complete" snapshots on all VMs |
 
-The script is idempotent -- safe to re-run if it fails partway through.
+The script is idempotent -- safe to re-run if it fails partway through. Phases 4-7 have try/catch blocks with recovery guidance if a VM is unresponsive.
 
 ## Configuration
 
-All configurable values are in `config.psd1`: lab name, domain, site code, network prefix, admin credentials, VM sizing, service account details, and software URLs.
+All configurable values are in `config.psd1`:
+
+| Setting | Description |
+|---------|-------------|
+| Lab name, domain, site code | Core lab identity |
+| VM sizing (RAM, CPU, disks) | Per-VM resource allocation |
+| Admin credentials | Domain admin account |
+| Service account names/passwords | 3 MECM service accounts |
+| OS filters | Wildcard patterns matched against ISO contents |
+| Software URLs | ODBC, VC++ download locations |
+
+**Security**: Default passwords are published in source control. The script warns loudly at startup if defaults are still in use. Change them before deploying to any network.
 
 ## After Deployment
 
@@ -78,11 +93,13 @@ All configurable values are in `config.psd1`: lab name, domain, site code, netwo
 
 Created automatically in `OU=Service Accounts,DC=contoso,DC=com`:
 
-| Account | Password | Purpose | Permissions |
-|---------|----------|---------|-------------|
-| `CONTOSO\svc-CMPush` | `P@ssw0rd!Push1` | Client Push Installation | Domain Admins |
-| `CONTOSO\svc-CMNAA` | `P@ssw0rd!NAA1` | Network Access Account | Domain Users only |
-| `CONTOSO\svc-CMAdmin` | `P@ssw0rd!Admin1` | MECM admin, cc4cm, RDP | Domain Admins + Remote Desktop Users |
+| Account | Purpose | Permissions |
+|---------|---------|-------------|
+| `CONTOSO\svc-CMPush` | Client Push Installation | Domain Admins |
+| `CONTOSO\svc-CMNAA` | Network Access Account | Domain Users only |
+| `CONTOSO\svc-CMAdmin` | MECM admin, cc4cm, RDP | Domain Admins + Remote Desktop Users |
+
+Passwords are set in `config.psd1`. Change them before deployment.
 
 Configure in the MECM console:
 - **Client Push**: Administration > Site Config > Sites > Client Installation Settings > Client Push > Accounts > Add `svc-CMPush`
@@ -136,7 +153,7 @@ ODBC 18.6.1.1 has a NULL handling regression that breaks CM. The vendored Automa
 
 ### OS disk too small
 
-The default disk size is 100 GB. If CM01 runs out of space:
+The default OS disk is expanded to 150 GB (configurable via `CM.OSDiskSize` in config.psd1). If CM01 still runs out of space:
 ```powershell
 Stop-VM -Name CM01
 Resize-VHD -Path (Get-VMHardDiskDrive -VMName CM01 | Where-Object ControllerLocation -eq 0).Path -SizeBytes 200GB
@@ -155,16 +172,38 @@ Invoke-LabCommand -ComputerName CM01 -ScriptBlock {
 }
 ```
 
+### OS edition not found
+
+If the script fails with "No server OS found matching filter", run this to see available editions in your ISOs:
+```powershell
+Import-Module AutomatedLab
+Get-LabAvailableOperatingSystem -Path C:\LabSources\ISOs
+```
+Then update `ServerOSFilter` or `ClientOSFilter` in `config.psd1` to match.
+
 ## File Structure
 
 ```
 homelab/
-    README.md              # This file
-    CHANGELOG.md           # Version history
-    config.psd1            # All configurable values
-    Deploy-HomeLab.ps1     # Single-script deployment
+    README.md                  # This file
+    CHANGELOG.md               # Version history
+    config.psd1                # All configurable values (change passwords here)
+    Deploy-HomeLab.ps1         # Single-script deployment
+    Update-VendoredModules.ps1 # Copy fork modules into lib/
+    Tests/
+        Deploy-HomeLab.Tests.ps1  # Pester tests (29 tests)
     lib/
-        AutomatedLab/      # Vendored AutomatedLab fork (with CM 2509 + DHCP fixes)
+        AutomatedLab/          # Vendored AutomatedLab fork (29 bug fixes for CM 2509)
+```
+
+## Tests
+
+```powershell
+# Homelab wrapper tests (29 tests -- config, passwords, structure, OS filters)
+Invoke-Pester ./Tests/
+
+# AutomatedLab fork tests (172 tests -- CM install, DHCP, paths, INI, prereqs)
+Invoke-Pester c:\projects\AutomatedLab\Tests\CommunityFork.Tests.ps1
 ```
 
 ## Estimated Timelines

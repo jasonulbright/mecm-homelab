@@ -3,5 +3,5 @@
   "Status": "active",
   "Category": "Infrastructure",
   "ValidationSchedule": "none",
-  "Notes": "MECM home lab deployment. Vendored AutomatedLab fork. Needs clean E2E log capture for docs."
+  "Notes": "MECM home lab deployment (AutomatedLab + Hyper-V, WS2025 + SQL2022 + CM2509). First successful automated E2E deployment 2026-03-28. Needs clean log capture for documentation (use -LogFile param). Cosmetic issues remaining: version check message on first run if DLL locked, second Install-Lab pass re-iterates all roles (adds ~20 min). Open issues in vendored AL fork: WMI null crash on fresh lab update check (runs twice), unnamed activities need -ActivityName, SSRS config fails on Server 2025 (non-fatal)."
 }

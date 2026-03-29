@@ -562,6 +562,8 @@ if (-not $labImported) {
 
     # ── Install Lab (DC01 + CM01 — CLIENT01 skipped via SkipDeployment) ──
     # AutomatedLab handles: AD, CA, SQL, VC++, ODBC, MSOLEDB, ADK, AD schema, CM install
+    # CM setup.exe can take 90+ minutes on slower hardware; default 60-minute timeout causes false failures
+    Set-PSFConfig -Module AutomatedLab -Name Timeout_ConfigurationManagerInstallation -Value 120
     Write-Host "`n--- Installing Lab - DC01 + CM01 with SQL + ConfigMgr (this will take 2-4 hours) ---" -ForegroundColor White
     Write-Host "  Started at: $(Get-Date -Format 'HH:mm:ss')" -ForegroundColor DarkGray
 
@@ -1039,7 +1041,7 @@ Write-Host ''
 
 # Close log file
 if ($script:logStream) {
+    Write-Host "  Log saved to: $LogFile" -ForegroundColor DarkGray
     $script:logStream.Close()
     $script:logStream.Dispose()
-    Write-Host "  Log saved to: $LogFile" -ForegroundColor DarkGray
 }

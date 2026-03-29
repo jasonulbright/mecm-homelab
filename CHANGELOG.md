@@ -1,5 +1,16 @@
 # Changelog
 
+## [2.2.0] - 2026-03-29
+
+### Fixed
+- **CM install timeout** -- set `Timeout_ConfigurationManagerInstallation` to 120 minutes before `Install-Lab` (default 60 was insufficient)
+- **Log file close order** -- "Log saved to" message now prints before closing the StreamWriter (was attempting to write through the proxy after stream disposal)
+- **ODBC MSI on disk** -- fixed misnamed `ODBC` flat file to `ODBC/msodbcsql.msi` directory structure
+- **MSOLEDB MSI on disk** -- same fix for `MSOLEDB` flat file
+
+### Changed
+- Vendored AutomatedLab fork synced with all v5.60.3-community fixes (ODBC path, validation retry, SNAC/SSRS error suppression, Write-PSFMessage hang)
+
 ## [2.1.0] - 2026-03-28
 
 ### Security

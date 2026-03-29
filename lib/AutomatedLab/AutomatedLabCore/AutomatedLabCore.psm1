@@ -1595,22 +1595,35 @@ function Install-CMSite
     #endregion
 
     #region Validating install
-    Write-ScreenInfo -Message "Validating install" -TaskStart
+    Write-ScreenInfo -Message "Validating install (WMI namespace may take a few minutes to initialize)" -TaskStart
     $cim = New-LabCimSession -ComputerName $CMServer
     $Query = "SELECT * FROM SMS_Site WHERE SiteCode='{0}'" -f $CMSiteCode
     $Namespace = "ROOT/SMS/site_{0}" -f $CMSiteCode
 
-    try
+    $maxRetries = 6
+    $retryDelay = 30
+    $result = $null
+    for ($attempt = 1; $attempt -le $maxRetries; $attempt++)
     {
-        $result = Get-CimInstance -Namespace $Namespace -Query $Query -ErrorAction "Stop" -CimSession $cim -ErrorVariable ReceiveJobErr
-    }
-    catch
-    {
-        $Message = "Failed to validate install, could not find site code '{0}' in SMS_Site class ({1})" -f $CMSiteCode, $ReceiveJobErr.ErrorRecord.Exception.Message
-        Write-ScreenInfo -Message $Message -Type "Error" -TaskEnd
-        Write-PSFMessage -Message "====ConfMgrSetup log content===="
-        Invoke-LabCommand -ComputerName $CMServer -PassThru -ScriptBlock { Get-Content -Path C:\ConfigMgrSetup.log } | Write-PSFMessage
-        return
+        try
+        {
+            $result = Get-CimInstance -Namespace $Namespace -Query $Query -ErrorAction "Stop" -CimSession $cim -ErrorVariable ReceiveJobErr
+            if ($null -ne $result) { break }
+        }
+        catch
+        {
+            if ($attempt -lt $maxRetries) {
+                Write-ScreenInfo -Message ("Validation attempt {0}/{1} failed, retrying in {2}s..." -f $attempt, $maxRetries, $retryDelay)
+                Start-Sleep -Seconds $retryDelay
+                $cim = New-LabCimSession -ComputerName $CMServer
+            } else {
+                $Message = "Failed to validate install after {0} attempts, could not find site code '{1}' in SMS_Site class ({2})" -f $maxRetries, $CMSiteCode, $ReceiveJobErr.ErrorRecord.Exception.Message
+                Write-ScreenInfo -Message $Message -Type "Error" -TaskEnd
+                Write-PSFMessage -Message "====ConfMgrSetup log content===="
+                Invoke-LabCommand -ComputerName $CMServer -ActivityName 'Retrieve ConfigMgrSetup.log' -PassThru -ScriptBlock { Get-Content -Path C:\ConfigMgrSetup.log } | ForEach-Object { Write-PSFMessage -Message $_ }
+                return
+            }
+        }
     }
     Write-ScreenInfo -Message "Activity done" -TaskEnd
     #endregion
@@ -10707,7 +10720,7 @@ function Install-LabConfigurationManager
         Write-LogFunctionExitWithError -Message $Message
     }
 
-    Install-LabSoftwarePackage -Path $ncli.FullName -ComputerName $vms -CommandLine "/qn /norestart IAcceptSqlncliLicenseTerms=Yes" -ExpectedReturnCodes 0
+    Install-LabSoftwarePackage -Path $ncli.FullName -ComputerName $vms -CommandLine "/qn /norestart IAcceptSqlncliLicenseTerms=Yes" -ExpectedReturnCodes 0 -ErrorAction SilentlyContinue 2>$null
 
     #region VC++, ODBC -- skip if already installed (SQL setup installs these as prereqs)
     # Note: MSOLEDB is NOT a CM prerequisite per Microsoft docs. CM only requires ODBC 18 and SQL Native Client.
@@ -10739,9 +10752,19 @@ function Install-LabConfigurationManager
         Write-ScreenInfo -Message 'ODBC Driver already installed (by SQL setup) -- skipping'
     } else {
         Write-ScreenInfo -Message 'Installing ODBC Driver 18.5.x'
-        $odbcMsi = Join-Path $labSources 'SoftwarePackages/ODBC/msodbcsql.msi'
+        $odbcDir = Join-Path $labSources 'SoftwarePackages/ODBC'
+        $odbcMsi = Join-Path $odbcDir 'msodbcsql.msi'
+
+        # Clean up misnamed file (previous runs saved MSI as 'ODBC' file instead of 'ODBC/msodbcsql.msi')
+        if ((Test-Path $odbcDir) -and -not (Test-Path $odbcDir -PathType Container)) {
+            Remove-Item $odbcDir -Force
+        }
+        if (-not (Test-Path $odbcDir)) {
+            New-Item -Path $odbcDir -ItemType Directory -Force | Out-Null
+        }
+
         if (-not (Test-Path $odbcMsi)) {
-            $odbcMsi = (Get-LabInternetFile -Uri 'https://go.microsoft.com/fwlink/?linkid=2335671' -Path "$labSources/SoftwarePackages/ODBC" -FileName 'msodbcsql.msi' -PassThru -ErrorAction Stop).FullName
+            $odbcMsi = (Get-LabInternetFile -Uri 'https://go.microsoft.com/fwlink/?linkid=2335671' -Path $odbcDir -FileName 'msodbcsql.msi' -PassThru -ErrorAction Stop).FullName
         }
         Install-LabSoftwarePackage -Path $odbcMsi -ComputerName $vms -CommandLine '/qn /norestart IACCEPTMSODBCSQLLICENSETERMS=YES' -ExpectedReturnCodes 0, 3010
     }
@@ -21282,7 +21305,7 @@ GO
 
         Install-LabSoftwarePackage -Path $labsources\SoftwarePackages\ReportBuilder.msi -ComputerName $server
         try {
-            Install-LabSoftwarePackage -Path $downloadFolder\SQLServerReportingServices.exe -CommandLine '/Quiet /IAcceptLicenseTerms' -ComputerName $server -ErrorAction SilentlyContinue
+            Install-LabSoftwarePackage -Path $downloadFolder\SQLServerReportingServices.exe -CommandLine '/Quiet /IAcceptLicenseTerms' -ComputerName $server -ErrorAction SilentlyContinue 2>$null
             Invoke-LabCommand -ActivityName 'Configuring SSRS' -ComputerName $server -FilePath $labSources\PostInstallationActivities\SqlServer\SetupSqlServerReportingServices.ps1 -ErrorAction SilentlyContinue
         }
         catch {

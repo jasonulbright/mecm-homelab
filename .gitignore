@@ -4,6 +4,5 @@ ConfigMgr_2509/
 *.exe
 *.msi
 
-# AutomatedLab runtime
-*.log
+# Local metadata
 project-manifest.json

@@ -1,0 +1,177 @@
+﻿
+MECM Home Lab Deployment
+  Lab: HomeLab | Domain: contoso.com | Site: MCM
+  Started: 2026-03-29 23:26:35
+
+  !! WARNING: DEFAULT PASSWORDS DETECTED !!
+  4 of 4 passwords in config.psd1 are still defaults.
+  These passwords are published in source control.
+  Change them in config.psd1 before deploying to any network.
+
+
+========================================
+  Phase 1: Prerequisites
+========================================
+
+--- Hyper-V ---
+  [OK]   Hyper-V enabled
+
+--- Host Resources ---
+  [WARN] Host RAM: 32GB (sufficient, 64GB recommended)
+
+--- AutomatedLab ---
+  [INFO] Installed: AutomatedLab
+  [WARN] Could not remove AutomatedLab.Common, overwriting in place
+  [INFO] Installed: AutomatedLab.Common
+  [WARN] Could not remove AutomatedLabCore, overwriting in place
+  [INFO] Installed: AutomatedLabCore
+  [INFO] Installed: AutomatedLabDefinition
+  [INFO] Installed: AutomatedLabNotifications
+  [INFO] Installed: AutomatedLabUnattended
+  [INFO] Installed: AutomatedLabWorker
+  [OK]   AutomatedLab v5.60.0 (vendored fork)
+
+--- LabSources ---
+  [OK]   LabSources: C:\LabSources
+
+--- ISO and Software Checks ---
+  [OK]   Windows Server 2025 ISO found
+  [OK]   SQL Server 2022 ISO found
+  [OK]   ConfigMgr 2509 source found
+  [OK]   ADK setup found
+  [OK]   ADK PE setup found
+
+--- OS Edition Detection ---
+  [OK]   Server OS: Windows Server 2025 Datacenter Evaluation (Desktop Experience)
+  [OK]   Client OS: Windows 11 Enterprise Evaluation
+
+========================================
+  Phase 2: Offline Downloads
+========================================
+
+--- ADK Offline Layout ---
+  [SKIP] ADK offline layout already exists at: C:\LabSources\SoftwarePackages\ADK\Offline
+
+--- ADK WinPE Offline Layout ---
+  [SKIP] ADK PE offline layout already exists at: C:\LabSources\SoftwarePackages\ADKPE\Offline
+
+========================================
+  Phase 3: Lab Deployment
+========================================
+
+--- Defining Lab: HomeLab ---
+
+--- Defining DC01 ---
+  [OK]   DC01 defined: 192.168.50.10, 2GB RAM, 2 vCPU
+
+--- Defining CM01 ---
+  [OK]   CM01 defined: 192.168.50.20, 10GB RAM, 4 vCPU, SQL+CM roles
+
+--- Defining CLIENT01 (deferred deployment) ---
+  [INFO] CLIENT01 defined (will deploy after DC+CM)
+
+--- Installing Lab - DC01 + CM01 with SQL + ConfigMgr (this will take 2-4 hours) ---
+  Started at: 23:26:44
+  [OK]   DC01 + CM01 deployed
+  Finished at: 01:01:47
+  [RUN]  Waiting for SMS_EXECUTIVE service...
+  [OK]   ConfigMgr verified: SMS_EXECUTIVE running
+
+--- Deploying CLIENT01 ---
+  [OK]   CLIENT01 deployed: 192.168.50.100
+
+--- Expanding CM01 OS Disk ---
+  [OK]   VHDX expanded to 150GB
+  [OK]   C: partition extended inside VM
+
+========================================
+  Phase 4: Service Accounts
+========================================
+  [OK]   Service accounts created (svc-CMPush, svc-CMNAA, svc-CMAdmin)
+
+========================================
+  Phase 5: Content Share
+========================================
+  [OK]   Content share created: \\CM01\ContentShare$
+
+========================================
+  Phase 6: Add svc-CMAdmin as MECM Full Administrator
+========================================
+  [OK]   svc-CMAdmin MECM Full Administrator role configured
+
+========================================
+  Phase 7: Deploy Tools to CM01
+========================================
+  [RUN]  Copying Client Center (cc4cm)...
+  [OK]   cc4cm deployed to C:\Tools\ClientCenter
+  [RUN]  Copying Application Packager...
+  [OK]   ApplicationPackager deployed to C:\Tools\ApplicationPackager
+
+========================================
+  Phase 8: Snapshots
+========================================
+  [OK]   Snapshots created: Deployment-Complete
+
+========================================
+  Deployment Complete!
+========================================
+
+  =============================================
+   MECM HOME LAB DEPLOYMENT COMPLETE
+  =============================================
+
+  Elapsed:    1h 46m 36s
+  Domain:     contoso.com
+  Admin:      contoso.com\LabAdmin
+  Password:   P@ssw0rd!
+  DC01:       192.168.50.10
+  CM01:       192.168.50.20
+  Site Code:  MCM
+  Site Name:  Home Lab Primary Site
+
+  Service Accounts:
+    CONTOSO\svc-CMPush  (Client Push - Domain Admins)
+    CONTOSO\svc-CMNAA   (NAA - Domain Users only)
+    CONTOSO\svc-CMAdmin (Admin - Domain Admins + RDP)
+
+  Content Share:
+    \\CM01\ContentShare$
+
+  Connect to VMs:
+    Connect-LabVM -ComputerName CM01          # RDP
+    Enter-LabPSSession -ComputerName CM01     # PS remoting
+
+  Lab management:
+    Stop-Lab -Name HomeLab      # Stop all VMs
+    Start-Lab -Name HomeLab     # Start all VMs
+    Remove-Lab -Name HomeLab    # Delete entire lab
+
+  =============================================
+   REMAINING MANUAL CONSOLE STEPS
+  =============================================
+
+  Open the CM console on CM01 and configure:
+
+  1. Active Directory Forest Discovery:
+     Administration > Hierarchy Configuration > Discovery Methods
+     > Active Directory Forest Discovery > Enable
+
+  2. Create a Boundary:
+     Administration > Hierarchy Configuration > Boundaries > Create
+     > Type: IP Subnet > 192.168.50.0/24
+
+  3. Create a Boundary Group:
+     Administration > Hierarchy Configuration > Boundary Groups > Create
+     > Add the boundary > References tab > add CM01 as site system
+
+  4. Enable Client Push:
+     Administration > Site Configuration > Sites > right-click site
+     > Client Installation Settings > Client Push > Accounts > Add CONTOSO\svc-CMPush
+
+  5. Network Access Account:
+     Administration > Site Configuration > Sites > right-click site
+     > Configure Site Components > Software Distribution > NAA > Add CONTOSO\svc-CMNAA
+
+  Finished at: 2026-03-30 01:13:12
+
+  Log saved to: c:\temp\deploy-homelab.log

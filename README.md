@@ -190,6 +190,7 @@ homelab/
     config.psd1                # All configurable values (change passwords here)
     Deploy-HomeLab.ps1         # Single-script deployment
     Update-VendoredModules.ps1 # Copy fork modules into lib/
+    example_install.log        # Sample deployment output (~1h 46m run)
     Tests/
         Deploy-HomeLab.Tests.ps1  # Pester tests (29 tests)
     lib/

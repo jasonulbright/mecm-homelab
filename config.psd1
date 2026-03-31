@@ -16,6 +16,12 @@
     ServerOSFilter = 'Windows Server 2025*Desktop Experience*'
     ClientOSFilter = 'Windows 11*Enterprise*'
 
+    # Hyper-V auto-start/stop behavior
+    # AutoStart: Start, StartIfRunning, Nothing
+    # AutoStop:  ShutDown, Save, TurnOff
+    AutoStartAction = 'Start'
+    AutoStopAction  = 'ShutDown'
+
     DC = @{
         Name       = 'DC01'
         IP         = '192.168.50.10'
@@ -23,6 +29,7 @@
         MinMemory  = 1GB
         MaxMemory  = 2GB
         Processors = 2
+        AutoStartDelay = 30   # DC starts first (AD/DNS must be up)
     }
     CM = @{
         Name       = 'CM01'
@@ -34,6 +41,7 @@
         SQLDisk    = 50   # GB
         DataDisk   = 50   # GB
         OSDiskSize = 150  # GB
+        AutoStartDelay = 90   # Wait for DC to be ready
     }
     Client = @{
         Name       = 'CLIENT01'
@@ -42,6 +50,7 @@
         MinMemory  = 2GB
         MaxMemory  = 4GB
         Processors = 2
+        AutoStartDelay = 180  # Wait for DC+CM to be ready
     }
 
     # Service accounts — CHANGE THESE PASSWORDS

@@ -562,8 +562,12 @@ if (-not $labImported) {
 
     # ── Install Lab (DC01 + CM01 — CLIENT01 skipped via SkipDeployment) ──
     # AutomatedLab handles: AD, CA, SQL, VC++, ODBC, MSOLEDB, ADK, AD schema, CM install
-    # CM setup.exe can take 90+ minutes on slower hardware; default 60-minute timeout causes false failures
+    # Extend timeouts for loaded hosts — defaults are too tight when the machine is multitasking
     Set-PSFConfig -Module AutomatedLab -Name Timeout_ConfigurationManagerInstallation -Value 120
+    Set-PSFConfig -Module AutomatedLab -Name Timeout_DcPromotionAdwsReady -Value 45
+    Set-PSFConfig -Module AutomatedLab -Name Timeout_DcPromotionRestartAfterDcpromo -Value 90
+    Set-PSFConfig -Module AutomatedLab -Name Timeout_WaitLabMachine_Online -Value 90
+    Set-PSFConfig -Module AutomatedLab -Name Timeout_InstallLabCAInstallation -Value 60
     Write-Host "`n--- Installing Lab - DC01 + CM01 with SQL + ConfigMgr (this will take 2-4 hours) ---" -ForegroundColor White
     Write-Host "  Started at: $(Get-Date -Format 'HH:mm:ss')" -ForegroundColor DarkGray
 
@@ -964,7 +968,19 @@ if (Test-Path $appPkgSource) {
 # PHASE 8: SNAPSHOTS
 ###############################################################################
 
-Write-Step 'Phase 8: Snapshots'
+Write-Step 'Phase 8: Hyper-V Auto-Start/Stop'
+
+foreach ($vm in @($Config.DC, $Config.CM, $Config.Client)) {
+    $delay = if ($vm.AutoStartDelay) { $vm.AutoStartDelay } else { 30 }
+    Set-VM -Name $vm.Name `
+        -AutomaticStartAction $Config.AutoStartAction `
+        -AutomaticStartDelay $delay `
+        -AutomaticStopAction $Config.AutoStopAction `
+        -ErrorAction SilentlyContinue
+}
+Write-Status "Auto-start: $($Config.AutoStartAction) (DC:30s, CM:90s, CLIENT:180s), Auto-stop: $($Config.AutoStopAction)"
+
+Write-Step 'Phase 9: Snapshots'
 
 Checkpoint-VM -Name $Config.DC.Name -SnapshotName 'Deployment-Complete' -ErrorAction SilentlyContinue
 Checkpoint-VM -Name $Config.CM.Name -SnapshotName 'Deployment-Complete' -ErrorAction SilentlyContinue

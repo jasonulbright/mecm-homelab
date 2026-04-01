@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.2.1] - 2026-03-31
+
+### Changed
+- **SQL Server download instructions** -- clarified that the evaluation download link provides an EXE bootstrapper, not a direct ISO. Run it and select "Download Media" to retrieve the actual ISO.
+
+---
+
 ## [2.2.0] - 2026-03-29
 
 ### Fixed

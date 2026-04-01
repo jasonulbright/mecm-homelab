@@ -30,7 +30,7 @@ Download these before running the script:
 | Software | Location | Download URL |
 |----------|----------|-------------|
 | Windows Server 2025 Evaluation ISO | `C:\LabSources\ISOs\` | https://www.microsoft.com/en-us/evalcenter/evaluate-windows-server-2025 |
-| SQL Server 2022 Evaluation ISO | `C:\LabSources\ISOs\` | https://www.microsoft.com/en-us/evalcenter/download-sql-server-2022 |
+| SQL Server 2022 Evaluation ISO | `C:\LabSources\ISOs\` | https://www.microsoft.com/en-us/evalcenter/download-sql-server-2022 (downloads an EXE bootstrapper -- run it and select "Download Media" to get the actual ISO) |
 | Windows 11 Enterprise Evaluation ISO | `C:\LabSources\ISOs\` | https://www.microsoft.com/en-us/evalcenter/evaluate-windows-11-enterprise |
 | ConfigMgr 2509 Baseline (extract with 7-Zip) | `C:\LabSources\SoftwarePackages\CM\` | https://www.microsoft.com/en-us/evalcenter/download-microsoft-endpoint-configuration-manager |
 | Windows ADK (adksetup.exe) | `C:\LabSources\SoftwarePackages\ADK\` | https://go.microsoft.com/fwlink/?linkid=2289980 |

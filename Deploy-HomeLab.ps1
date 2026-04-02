@@ -21,7 +21,8 @@
 
     CM01 has both SQLServer2022 and ConfigurationManager roles, letting
     AutomatedLab do the heavy lifting for prerequisite installs and CM setup.
-    Only CM01 has a second NIC on the Default Switch for internet access.
+    All VMs have a second NIC on the Default Switch for internet access (NAT).
+    Required for Windows evaluation activation and OS updates.
 
     Idempotent where possible -- safe to re-run if it fails partway through.
 
@@ -493,6 +494,7 @@ if (-not $labImported) {
 
     $dcNics = @(
         New-LabNetworkAdapterDefinition -VirtualSwitch $networkName -Ipv4Address "$($Config.DC.IP)/24" -Ipv4DNSServers $Config.DC.IP
+        New-LabNetworkAdapterDefinition -VirtualSwitch 'Default Switch' -UseDhcp
     )
 
     Add-LabMachineDefinition -Name $Config.DC.Name `
@@ -548,6 +550,7 @@ if (-not $labImported) {
 
     $clientNics = @(
         New-LabNetworkAdapterDefinition -VirtualSwitch $networkName -Ipv4Address "$($Config.Client.IP)/24" -Ipv4DNSServers $Config.DC.IP
+        New-LabNetworkAdapterDefinition -VirtualSwitch 'Default Switch' -UseDhcp
     )
     Add-LabMachineDefinition -Name $Config.Client.Name `
         -Memory $Config.Client.Memory `
@@ -1027,30 +1030,253 @@ Write-Host "    Start-Lab -Name $labName     # Start all VMs" -ForegroundColor W
 Write-Host "    Remove-Lab -Name $labName    # Delete entire lab" -ForegroundColor White
 Write-Host ''
 Write-Host '  =============================================' -ForegroundColor Yellow
+Write-Host '   CONFIGURING MECM DISCOVERY & BOUNDARIES' -ForegroundColor Yellow
+Write-Host '  =============================================' -ForegroundColor Yellow
+Write-Host ''
+
+Invoke-LabCommand -ComputerName $cmName -ActivityName 'Configure MECM Discovery and Boundaries' -ScriptBlock {
+    param($SiteCode, $NetPrefix, $DomainDN, $DomainNetBIOS, $PushAccount, $PushPassword, $NAAAccount, $NAAPassword)
+
+    $cmModule = Join-Path $env:SMS_ADMIN_UI_PATH '..\ConfigurationManager.psd1'
+    Import-Module $cmModule -Force
+    Set-Location "${SiteCode}:"
+
+    # 1. Enable AD Forest Discovery with automatic boundary creation
+    Write-Host '  Enabling AD Forest Discovery...'
+    Set-CMDiscoveryMethod -ActiveDirectoryForestDiscovery `
+        -SiteCode $SiteCode `
+        -Enabled $true `
+        -EnableActiveDirectorySiteBoundaryCreation $true `
+        -EnableSubnetBoundaryCreation $true
+
+    # 2. Enable AD System Discovery (discovers computers)
+    Write-Host '  Enabling AD System Discovery...'
+    Set-CMDiscoveryMethod -ActiveDirectorySystemDiscovery `
+        -SiteCode $SiteCode `
+        -Enabled $true `
+        -EnableDeltaDiscovery $true `
+        -DeltaDiscoveryMins 5 `
+        -AddActiveDirectoryContainer "LDAP://$DomainDN" `
+        -EnableRecursive $true
+
+    # 3. Enable AD User Discovery
+    Write-Host '  Enabling AD User Discovery...'
+    Set-CMDiscoveryMethod -ActiveDirectoryUserDiscovery `
+        -SiteCode $SiteCode `
+        -Enabled $true `
+        -EnableDeltaDiscovery $true `
+        -DeltaDiscoveryMins 5 `
+        -AddActiveDirectoryContainer "LDAP://$DomainDN" `
+        -EnableRecursive $true
+
+    # 4. Create IP subnet boundary
+    Write-Host "  Creating boundary: $NetPrefix.0/24..."
+    $boundary = Get-CMBoundary -BoundaryName "$NetPrefix.0/24" -ErrorAction SilentlyContinue
+    if (-not $boundary) {
+        $boundary = New-CMBoundary -DisplayName "$NetPrefix.0/24" `
+            -BoundaryType IPSubnet `
+            -Value "$NetPrefix.0/24"
+        Write-Host "  Created boundary: $($boundary.DisplayName)"
+    } else {
+        Write-Host '  Boundary already exists.'
+    }
+
+    # 5. Create boundary group and add boundary + site system
+    Write-Host '  Creating boundary group...'
+    $bgName = 'HomeLab Boundary Group'
+    $bg = Get-CMBoundaryGroup -Name $bgName -ErrorAction SilentlyContinue
+    if (-not $bg) {
+        $bg = New-CMBoundaryGroup -Name $bgName
+        Write-Host "  Created boundary group: $bgName"
+    } else {
+        Write-Host '  Boundary group already exists.'
+    }
+
+    # Add boundary to group
+    try {
+        Add-CMBoundaryToGroup -BoundaryId $boundary.BoundaryID -BoundaryGroupId $bg.GroupID -ErrorAction Stop
+        Write-Host '  Added boundary to group.'
+    } catch {
+        Write-Host '  Boundary already in group (or error).'
+    }
+
+    # Add site system to boundary group
+    $siteSystemServer = (Get-CMSiteSystemServer -SiteCode $SiteCode -ErrorAction SilentlyContinue | Select-Object -First 1)
+    if ($siteSystemServer) {
+        try {
+            Set-CMBoundaryGroup -Id $bg.GroupID -AddSiteSystemServerName $siteSystemServer.NetworkOSPath.TrimStart('\\') -ErrorAction Stop
+            Write-Host '  Added site system to boundary group.'
+        } catch {
+            Write-Host '  Site system already in boundary group (or error).'
+        }
+    }
+
+    # 6. Register service accounts with CM
+    Write-Host '  Registering service accounts with CM...'
+    $pushPass = ConvertTo-SecureString $PushPassword -AsPlainText -Force
+    $naaPassSec = ConvertTo-SecureString $NAAPassword -AsPlainText -Force
+    try {
+        New-CMAccount -Name "$DomainNetBIOS\$PushAccount" -Password $pushPass -SiteCode $SiteCode -ErrorAction Stop | Out-Null
+        Write-Host "  Registered $DomainNetBIOS\$PushAccount"
+    } catch { Write-Host "  Push account: $($_.Exception.Message)" }
+    try {
+        New-CMAccount -Name "$DomainNetBIOS\$NAAAccount" -Password $naaPassSec -SiteCode $SiteCode -ErrorAction Stop | Out-Null
+        Write-Host "  Registered $DomainNetBIOS\$NAAAccount"
+    } catch { Write-Host "  NAA account: $($_.Exception.Message)" }
+
+    # 7. Configure Client Push Installation
+    Write-Host '  Configuring Client Push Installation...'
+    try {
+        Set-CMClientPushInstallation -SiteCode $SiteCode `
+            -EnableAutomaticClientPushInstallation $true `
+            -InstallClientToDomainController $true `
+            -EnableSystemTypeServer $true `
+            -EnableSystemTypeWorkstation $true `
+            -AddAccount "$DomainNetBIOS\$PushAccount" `
+            -ErrorAction Stop
+        Write-Host "  Client Push configured: $DomainNetBIOS\$PushAccount"
+    } catch {
+        Write-Host "  Client Push: $($_.Exception.Message)"
+    }
+
+    # 8. Configure Network Access Account
+    Write-Host '  Configuring Network Access Account...'
+    try {
+        Set-CMSoftwareDistributionComponent -SiteCode $SiteCode `
+            -NetworkAccessAccountName @("$DomainNetBIOS\$NAAAccount") `
+            -ErrorAction Stop
+        Write-Host "  NAA configured: $DomainNetBIOS\$NAAAccount"
+    } catch {
+        Write-Host "  NAA: $($_.Exception.Message)"
+    }
+
+    # 9. Invoke a full discovery cycle
+    Write-Host '  Triggering discovery cycle...'
+    Invoke-CMForestDiscovery -SiteCode $SiteCode -ErrorAction SilentlyContinue
+    Invoke-CMSystemDiscovery -SiteCode $SiteCode -ErrorAction SilentlyContinue
+    Invoke-CMUserDiscovery -SiteCode $SiteCode -ErrorAction SilentlyContinue
+
+    Write-Host '  Discovery, boundaries, client push, and NAA configured.'
+
+} -ArgumentList $siteCode, $netPrefix, "DC=$($Config.DomainName.Split('.')[0]),DC=$($Config.DomainName.Split('.')[1])", $netbios, $Config.ServiceAccounts.ClientPush.Name, $Config.ServiceAccounts.ClientPush.Password, $Config.ServiceAccounts.NAA.Name, $Config.ServiceAccounts.NAA.Password -ErrorAction Continue
+
+Write-Status 'MECM Discovery and Boundaries configured' -Level GOOD
+
+# ── Install WSUS + SUP with best practices ──
+Write-Host "`n--- Installing WSUS and Software Update Point ---" -ForegroundColor White
+
+# Step 1: Install WSUS Windows feature (must be done before adding CM role)
+Invoke-LabCommand -ComputerName $cmName -ActivityName 'Install WSUS Feature' -ScriptBlock {
+    Install-WindowsFeature -Name UpdateServices-Services, UpdateServices-DB -IncludeManagementTools | Out-Null
+    $wsusUtil = 'C:\Program Files\Update Services\Tools\wsusutil.exe'
+    if (Test-Path $wsusUtil) {
+        Start-Process -FilePath $wsusUtil -ArgumentList @('postinstall', "SQL_INSTANCE_NAME=$env:COMPUTERNAME", 'CONTENT_DIR=C:\WSUS') -Wait -NoNewWindow | Out-Null
+    }
+} -ErrorAction Continue
+
+# Step 2: Configure WsusPool IIS best practices + add SUP role
+Invoke-LabCommand -ComputerName $cmName -ActivityName 'Configure WSUS Best Practices and Add SUP' -ScriptBlock {
+    param($SiteCode, $ServerFQDN)
+
+    # IIS WsusPool best practices
+    Import-Module WebAdministration -ErrorAction SilentlyContinue
+    $poolPath = 'IIS:\AppPools\WsusPool'
+    if (Test-Path $poolPath) {
+        Set-ItemProperty $poolPath -Name recycling.periodicRestart.privateMemory -Value 0
+        try { Set-ItemProperty $poolPath -Name recycling.periodicRestart.memory -Value 0 } catch { }
+        Set-ItemProperty $poolPath -Name queueLength -Value 2000
+        Set-ItemProperty $poolPath -Name processModel.idleTimeout -Value ([TimeSpan]::Zero)
+        Set-ItemProperty $poolPath -Name processModel.pingingEnabled -Value $false
+        Set-ItemProperty $poolPath -Name recycling.periodicRestart.time -Value ([TimeSpan]::Zero)
+        Write-Host '  WsusPool IIS best practices applied'
+    }
+
+    # Add SUP role
+    $cmModule = Join-Path $env:SMS_ADMIN_UI_PATH '..\ConfigurationManager.psd1'
+    Import-Module $cmModule -Force
+    Set-Location "${SiteCode}:"
+
+    $existingSup = Get-CMSoftwareUpdatePoint -SiteCode $SiteCode -ErrorAction SilentlyContinue
+    if (-not $existingSup) {
+        Add-CMSoftwareUpdatePoint -SiteCode $SiteCode -SiteSystemServerName $ServerFQDN -WsusIisPort 8530 -WsusIisSslPort 8531 -ErrorAction Stop
+        Write-Host '  Software Update Point added'
+    } else {
+        Write-Host '  SUP already exists'
+    }
+} -ArgumentList $siteCode, "$cmName.$domainName" -ErrorAction Continue
+
+Write-Status 'WSUS and SUP installed with best practices' -Level GOOD
+
+# Step 3: Configure SUP products, classifications, and sync schedule
+Invoke-LabCommand -ComputerName $cmName -ActivityName 'Configure SUP Products and Classifications' -ScriptBlock {
+    param($SiteCode)
+
+    $cmModule = Join-Path $env:SMS_ADMIN_UI_PATH '..\ConfigurationManager.psd1'
+    Import-Module $cmModule -Force
+    Set-Location "${SiteCode}:"
+
+    # Products (added individually to avoid array parsing issues)
+    $products = @(
+        'Windows 11'
+        'Microsoft Server Operating System-24H2'
+        'Microsoft SQL Server 2022'
+        'Microsoft SQL Server Management Studio v20'
+        'Microsoft OLE DB Driver 19 for SQL Server'
+        'Microsoft ODBC Driver 18 for SQL Server'
+        'PowerShell - x64'
+    )
+    foreach ($p in $products) {
+        try {
+            Set-CMSoftwareUpdatePointComponent -SiteCode $SiteCode -AddProduct $p -ErrorAction Stop
+            Write-Host "  Added product: $p"
+        } catch {
+            Write-Host "  Product skipped: $p - $($_.Exception.Message)"
+        }
+    }
+
+    # Classifications
+    foreach ($c in @('Critical Updates', 'Security Updates', 'Updates')) {
+        try {
+            Set-CMSoftwareUpdatePointComponent -SiteCode $SiteCode -AddUpdateClassification $c -ErrorAction Stop
+            Write-Host "  Added classification: $c"
+        } catch {
+            Write-Host "  Classification skipped: $c - $($_.Exception.Message)"
+        }
+    }
+
+    # Schedule, language, cleanup, supersedence
+    try {
+        $schedule = New-CMSchedule -RecurCount 1 -RecurInterval Days -Start (Get-Date '02:00:00')
+        Set-CMSoftwareUpdatePointComponent -SiteCode $SiteCode `
+            -AddLanguageUpdateFile 'English' `
+            -AddLanguageSummaryDetail 'English' `
+            -Schedule $schedule `
+            -EnableSyncFailureAlert $true `
+            -EnableCallWsusCleanupWizard $true `
+            -ImmediatelyExpireSupersedence $false `
+            -WaitMonth 3 `
+            -ErrorAction Stop
+        Write-Host '  Schedule and settings configured'
+    } catch {
+        Write-Host "  Settings: $($_.Exception.Message)"
+    }
+
+    # Trigger initial sync
+    Write-Host '  Triggering initial WSUS sync...'
+    Sync-CMSoftwareUpdate -FullSync $true -ErrorAction SilentlyContinue
+    Write-Host '  Sync initiated (will complete in background)'
+
+} -ArgumentList $siteCode -ErrorAction Continue
+
+Write-Status 'SUP products and classifications configured' -Level GOOD
+
+Write-Host ''
+Write-Host '  =============================================' -ForegroundColor Yellow
 Write-Host '   REMAINING MANUAL CONSOLE STEPS' -ForegroundColor Yellow
 Write-Host '  =============================================' -ForegroundColor Yellow
 Write-Host ''
-Write-Host '  Open the CM console on CM01 and configure:' -ForegroundColor White
-Write-Host ''
-Write-Host '  1. Active Directory Forest Discovery:' -ForegroundColor White
-Write-Host '     Administration > Hierarchy Configuration > Discovery Methods' -ForegroundColor DarkGray
-Write-Host '     > Active Directory Forest Discovery > Enable' -ForegroundColor DarkGray
-Write-Host ''
-Write-Host '  2. Create a Boundary:' -ForegroundColor White
-Write-Host '     Administration > Hierarchy Configuration > Boundaries > Create' -ForegroundColor DarkGray
-Write-Host "     > Type: IP Subnet > $netPrefix.0/24" -ForegroundColor DarkGray
-Write-Host ''
-Write-Host '  3. Create a Boundary Group:' -ForegroundColor White
-Write-Host '     Administration > Hierarchy Configuration > Boundary Groups > Create' -ForegroundColor DarkGray
-Write-Host '     > Add the boundary > References tab > add CM01 as site system' -ForegroundColor DarkGray
-Write-Host ''
-Write-Host '  4. Enable Client Push:' -ForegroundColor White
-Write-Host '     Administration > Site Configuration > Sites > right-click site' -ForegroundColor DarkGray
-Write-Host "     > Client Installation Settings > Client Push > Accounts > Add $netbios\$($Config.ServiceAccounts.ClientPush.Name)" -ForegroundColor DarkGray
-Write-Host ''
-Write-Host '  5. Network Access Account:' -ForegroundColor White
-Write-Host '     Administration > Site Configuration > Sites > right-click site' -ForegroundColor DarkGray
-Write-Host "     > Configure Site Components > Software Distribution > NAA > Add $netbios\$($Config.ServiceAccounts.NAA.Name)" -ForegroundColor DarkGray
+Write-Host '  All discovery, boundaries, client push, and NAA configured automatically.' -ForegroundColor White
+Write-Host '  No manual console steps required.' -ForegroundColor Green
 Write-Host ''
 Write-Host "  Finished at: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')" -ForegroundColor DarkGray
 Write-Host ''

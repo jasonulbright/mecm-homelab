@@ -1,8 +1,8 @@
 {
-  "ProjectType": "powershell-script",
-  "Description": "Automated MECM home lab deployment via AutomatedLab and Hyper-V",
-  "Status": "active",
-  "Category": "Infrastructure",
-  "ValidationSchedule": "none",
-  "Notes": "TASK: Capture clean E2E log for documentation\nINFO: WS2025 + SQL2022 + CM2509, vendored AutomatedLab fork\nINFO: 201 tests passing (29 homelab + 172 fork)"
+    "Description":  "Automated MECM home lab deployment via AutomatedLab and Hyper-V",
+    "ProjectType":  "powershell-script",
+    "ValidationSchedule":  "none",
+    "Category":  "Infrastructure",
+    "Status":  "active",
+    "Notes":  "INFO: WS2025 + SQL2022 + CM2509, vendored AutomatedLab fork\nINFO: 201 tests passing (29 homelab + 172 fork)\nINFO: All VMs have Default Switch NIC for internet/activation\nINFO: AD Discovery, boundaries, client push, NAA, SUP/WSUS fully automated\nTASK: Capture clean E2E log for documentation\nTASK: Add SUP product config to post-install automation"
 }

@@ -616,13 +616,29 @@ if (-not $labImported) {
     # ── CLIENT01: Deploy now that DC+CM are up (avoids RAM contention during AD/SQL) ──
     Write-Host "`n--- Deploying CLIENT01 ---" -ForegroundColor White
     $clientVM = Get-LabVM -ComputerName $Config.Client.Name -ErrorAction SilentlyContinue
-    if ($clientVM -and $clientVM.SkipDeployment) {
+    $clientHyperV = Get-VM -Name $Config.Client.Name -ErrorAction SilentlyContinue
+
+    # Determine if CLIENT01 needs deployment
+    $needsDeploy = $false
+    if (-not $clientVM) {
+        Write-Status 'CLIENT01 not in lab definition - skipping' -Level WARN
+    } elseif (-not $clientHyperV) {
+        # Lab definition exists but VM was deleted - force redeploy
+        Write-Host '  CLIENT01 VM missing - forcing redeployment...'
         $clientVM.SkipDeployment = $false
+        $needsDeploy = $true
+    } elseif ($clientVM.SkipDeployment) {
+        # First run - deferred deployment
+        $clientVM.SkipDeployment = $false
+        $needsDeploy = $true
+    } else {
+        Write-Status 'CLIENT01 already deployed' -Level SKIP
+    }
+
+    if ($needsDeploy) {
         try {
             Install-Lab -NoValidation
         } catch {
-            # Install-Lab re-iterates all roles (SQL, CM) for idempotency.
-            # CM update validation may fail on fresh labs (no updates synced yet).
             $runningClient = Get-VM -Name $Config.Client.Name -ErrorAction SilentlyContinue | Where-Object State -eq 'Running'
             if ($runningClient) {
                 Write-Status "Install-Lab reported errors but CLIENT01 is running. Continuing." -Level WARN
@@ -631,10 +647,6 @@ if (-not $labImported) {
             }
         }
         Write-Status "CLIENT01 deployed: $($Config.Client.IP)"
-    } elseif (-not $clientVM) {
-        Write-Status 'CLIENT01 not in lab definition — skipping' -Level WARN
-    } else {
-        Write-Status 'CLIENT01 already deployed' -Level SKIP
     }
 
 } else {

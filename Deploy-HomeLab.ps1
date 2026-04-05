@@ -16,8 +16,9 @@
       7.  Create content share on CM01
       8.  Add svc-CMAdmin as MECM Full Administrator
       9.  Deploy tools (cc4cm + AppPackager) to CM01
-     10.  Create snapshots
-     11.  Print connection info and remaining manual console steps
+     10.  Create test deployment collection with maintenance window
+     11.  Create snapshots
+     12.  Print connection info and remaining manual console steps
 
     CM01 has both SQLServer2022 and ConfigurationManager roles, letting
     AutomatedLab do the heavy lifting for prerequisite installs and CM setup.
@@ -812,6 +813,10 @@ Invoke-LabCommand -ComputerName $cmName -ActivityName 'Create content share' -Sc
 
     # Set NTFS permissions
     $acl = Get-Acl $SharePath
+    # Site server computer account needs Read for Distribution Manager to access package source
+    $siteServerRule = New-Object System.Security.AccessControl.FileSystemAccessRule(
+        "$env:COMPUTERNAME$", 'Read', 'ContainerInherit,ObjectInherit', 'None', 'Allow')
+    $acl.AddAccessRule($siteServerRule)
     $naaRule = New-Object System.Security.AccessControl.FileSystemAccessRule(
         "$DomainNetBIOS\svc-CMNAA", 'Read', 'ContainerInherit,ObjectInherit', 'None', 'Allow')
     $acl.AddAccessRule($naaRule)
@@ -819,7 +824,7 @@ Invoke-LabCommand -ComputerName $cmName -ActivityName 'Create content share' -Sc
         "$DomainNetBIOS\Domain Computers", 'Read', 'ContainerInherit,ObjectInherit', 'None', 'Allow')
     $acl.AddAccessRule($compRule)
     Set-Acl $SharePath $acl
-    Write-Host 'NTFS permissions set (Domain Admins=Full, Domain Computers+NAA=Read)'
+    Write-Host 'NTFS permissions set (CM01$=Read, Domain Admins=Full, Domain Computers+NAA=Read)'
 } -ArgumentList $sharePath, $shareName, $folders, $netbios
 
 Write-Status "Content share created: \\$cmName\$shareName"
@@ -1111,7 +1116,28 @@ Invoke-LabCommand -ComputerName $cmName -ActivityName 'Configure MECM Discovery 
         }
     }
 
-    # 6. Register service accounts with CM
+    # 6. Create DP group (used for content distribution)
+    Write-Host '  Creating distribution point group...'
+    $dpGroupName = 'All DPs'
+    $dpGroup = Get-CMDistributionPointGroup -Name $dpGroupName -ErrorAction SilentlyContinue
+    if (-not $dpGroup) {
+        $dpGroup = New-CMDistributionPointGroup -Name $dpGroupName -ErrorAction Stop
+        Write-Host "  Created DP group: $dpGroupName"
+    } else {
+        Write-Host "  DP group already exists: $dpGroupName"
+    }
+    # Add DP to group
+    $dp = Get-CMDistributionPoint -SiteCode $SiteCode -ErrorAction SilentlyContinue | Select-Object -First 1
+    if ($dp) {
+        try {
+            Add-CMDistributionPointToGroup -DistributionPointGroupName $dpGroupName -DistributionPointName ($dp.NetworkOSPath.TrimStart('\\')) -ErrorAction Stop
+            Write-Host "  Added $($dp.NetworkOSPath) to $dpGroupName"
+        } catch {
+            Write-Host "  DP already in group (or error)."
+        }
+    }
+
+    # 7. Register service accounts with CM
     Write-Host '  Registering service accounts with CM...'
     $pushPass = ConvertTo-SecureString $PushPassword -AsPlainText -Force
     $naaPassSec = ConvertTo-SecureString $NAAPassword -AsPlainText -Force
@@ -1150,7 +1176,19 @@ Invoke-LabCommand -ComputerName $cmName -ActivityName 'Configure MECM Discovery 
         Write-Host "  NAA: $($_.Exception.Message)"
     }
 
-    # 9. Invoke a full discovery cycle
+    # 9. Set content distribution thread limits (10 concurrent packages, 3 DP threads)
+    Write-Host '  Setting content distribution thread limits...'
+    try {
+        Set-CMSoftwareDistributionComponent -SiteCode $SiteCode `
+            -MaximumThreadCountPerPackage 10 `
+            -MaximumPackageCount 3 `
+            -ErrorAction Stop
+        Write-Host '  Package Thread Limit=10, Thread Limit=3'
+    } catch {
+        Write-Host "  Thread limits: $($_.Exception.Message)"
+    }
+
+    # 10. Invoke a full discovery cycle
     Write-Host '  Triggering discovery cycle...'
     Invoke-CMForestDiscovery -SiteCode $SiteCode -ErrorAction SilentlyContinue
     Invoke-CMSystemDiscovery -SiteCode $SiteCode -ErrorAction SilentlyContinue
@@ -1270,6 +1308,93 @@ Invoke-LabCommand -ComputerName $cmName -ActivityName 'Configure SUP Products an
 
 Write-Status 'SUP products and classifications configured' -Level GOOD
 
+# ── Create test collection with maintenance window ──
+Write-Host "`n--- Creating Test Deployment Collection ---" -ForegroundColor White
+
+Invoke-LabCommand -ComputerName $cmName -ActivityName 'Create Test Collection with Maintenance Window' -ScriptBlock {
+    param($SiteCode, $ClientName)
+
+    $cmModule = Join-Path $env:SMS_ADMIN_UI_PATH '..\ConfigurationManager.psd1'
+    if (-not (Get-Module ConfigurationManager)) { Import-Module $cmModule -Force }
+    Set-Location "${SiteCode}:"
+
+    $collName = 'SRL Packr - Test Deployments'
+
+    # Create collection
+    $collection = Get-CMDeviceCollection -Name $collName -ErrorAction SilentlyContinue
+    if (-not $collection) {
+        $collection = New-CMDeviceCollection `
+            -Name $collName `
+            -LimitingCollectionName 'All Desktop and Server Clients' `
+            -RefreshType None `
+            -ErrorAction Stop
+        Write-Host "  Created collection: $collName (ID: $($collection.CollectionID))"
+    } else {
+        Write-Host "  Collection already exists: $collName"
+    }
+
+    # Add CLIENT01 as direct member
+    $device = Get-CMDevice -Name $ClientName -ErrorAction SilentlyContinue
+    if ($device) {
+        $existing = Get-CMDeviceCollectionDirectMembershipRule `
+            -CollectionId $collection.CollectionID `
+            -ResourceName $ClientName `
+            -ErrorAction SilentlyContinue
+        if (-not $existing) {
+            Add-CMDeviceCollectionDirectMembershipRule `
+                -CollectionId $collection.CollectionID `
+                -ResourceId ([int]$device.ResourceID) `
+                -ErrorAction Stop
+            Write-Host "  Added $ClientName as direct member"
+        } else {
+            Write-Host "  $ClientName already a member"
+        }
+    } else {
+        Write-Host "  WARNING: $ClientName not yet discovered - add manually after discovery completes" -ForegroundColor Yellow
+    }
+
+    # Create maintenance window
+    $mwName = 'Daily Maintenance Window'
+    $existingMW = Get-CMMaintenanceWindow -CollectionId $collection.CollectionID -ErrorAction SilentlyContinue |
+        Where-Object { $_.Name -eq $mwName }
+    if (-not $existingMW) {
+        $schedule = New-CMSchedule -Start (Get-Date -Hour 0 -Minute 0 -Second 0) `
+            -DurationCount 6 `
+            -DurationInterval Hours `
+            -RecurInterval Days `
+            -RecurCount 1
+        New-CMMaintenanceWindow `
+            -CollectionId $collection.CollectionID `
+            -Name $mwName `
+            -Schedule $schedule `
+            -ApplyTo Any `
+            -ErrorAction Stop | Out-Null
+        Write-Host "  Created maintenance window: $mwName (daily 00:00-06:00)"
+    } else {
+        Write-Host "  Maintenance window already exists: $mwName"
+    }
+
+} -ArgumentList $siteCode, 'CLIENT01' -ErrorAction Continue
+
+Write-Status 'Test deployment collection with maintenance window created' -Level GOOD
+
+# ── Set CCMCache to 40 GB ──
+Write-Host "`n--- Configuring Client Cache Size ---" -ForegroundColor White
+
+Invoke-LabCommand -ComputerName $cmName -ActivityName 'Set CCMCache to 40 GB' -ScriptBlock {
+    param($SiteCode)
+
+    $cmModule = Join-Path $env:SMS_ADMIN_UI_PATH '..\ConfigurationManager.psd1'
+    if (-not (Get-Module ConfigurationManager)) { Import-Module $cmModule -Force }
+    Set-Location "${SiteCode}:"
+
+    Set-CMClientSettingClientCache -DefaultSetting -ConfigureCacheSize $true -MaxCacheSize 40960 -ErrorAction Stop
+    Write-Host '  CCMCache max size set to 40960 MB (40 GB)'
+
+} -ArgumentList $siteCode -ErrorAction Continue
+
+Write-Status 'Client cache size configured (40 GB)' -Level GOOD
+
 Write-Host ''
 Write-Host '  =============================================' -ForegroundColor Yellow
 Write-Host '   REMAINING MANUAL CONSOLE STEPS' -ForegroundColor Yellow
@@ -1283,7 +1408,7 @@ Write-Host ''
 
 # Close log file
 if ($script:logStream) {
-    Write-Host "  Log saved to: $LogFile" -ForegroundColor DarkGray
+    Write-Host "  Log saved to $LogFile" -ForegroundColor DarkGray
     $script:logStream.Close()
     $script:logStream.Dispose()
 }

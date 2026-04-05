@@ -613,41 +613,7 @@ if (-not $labImported) {
         Write-Status 'SMS_EXECUTIVE not running after 6 minutes. Check ConfigMgrSetup.log on CM01.' -Level WARN
     }
 
-    # ── CLIENT01: Deploy now that DC+CM are up (avoids RAM contention during AD/SQL) ──
-    Write-Host "`n--- Deploying CLIENT01 ---" -ForegroundColor White
-    $clientVM = Get-LabVM -ComputerName $Config.Client.Name -ErrorAction SilentlyContinue
-    $clientHyperV = Get-VM -Name $Config.Client.Name -ErrorAction SilentlyContinue
-
-    # Determine if CLIENT01 needs deployment
-    $needsDeploy = $false
-    if (-not $clientVM) {
-        Write-Status 'CLIENT01 not in lab definition - skipping' -Level WARN
-    } elseif (-not $clientHyperV) {
-        # Lab definition exists but VM was deleted - force redeploy
-        Write-Host '  CLIENT01 VM missing - forcing redeployment...'
-        $clientVM.SkipDeployment = $false
-        $needsDeploy = $true
-    } elseif ($clientVM.SkipDeployment) {
-        # First run - deferred deployment
-        $clientVM.SkipDeployment = $false
-        $needsDeploy = $true
-    } else {
-        Write-Status 'CLIENT01 already deployed' -Level SKIP
-    }
-
-    if ($needsDeploy) {
-        try {
-            Install-Lab -NoValidation
-        } catch {
-            $runningClient = Get-VM -Name $Config.Client.Name -ErrorAction SilentlyContinue | Where-Object State -eq 'Running'
-            if ($runningClient) {
-                Write-Status "Install-Lab reported errors but CLIENT01 is running. Continuing." -Level WARN
-            } else {
-                Write-Status "CLIENT01 deployment failed: $($_.Exception.Message)" -Level FAIL
-            }
-        }
-        Write-Status "CLIENT01 deployed: $($Config.Client.IP)"
-    }
+    # CLIENT01 deployment moved outside if/else to handle both new and rerun scenarios
 
 } else {
     Write-Status "Lab '$labName' already deployed -- skipping VM creation" -Level SKIP
@@ -663,6 +629,43 @@ if (-not $labImported) {
     } else {
         Write-Status 'ConfigMgr verified: SMS_EXECUTIVE running' -Level OK
     }
+}
+
+# ── CLIENT01: Ensure deployed (handles both new lab and rerun with deleted VM) ──
+Write-Host "`n--- Ensuring CLIENT01 is deployed ---" -ForegroundColor White
+$clientVM = Get-LabVM -ComputerName $Config.Client.Name -ErrorAction SilentlyContinue
+$clientHyperV = Get-VM -Name $Config.Client.Name -ErrorAction SilentlyContinue
+
+$needsDeploy = $false
+if (-not $clientVM) {
+    Write-Status 'CLIENT01 not in lab definition - skipping' -Level WARN
+} elseif (-not $clientHyperV) {
+    Write-Host '  CLIENT01 VM missing - forcing redeployment...'
+    $clientVM.SkipDeployment = $false
+    $needsDeploy = $true
+} elseif ($clientVM.SkipDeployment) {
+    $clientVM.SkipDeployment = $false
+    $needsDeploy = $true
+} elseif ($clientHyperV.State -ne 'Running') {
+    Write-Host '  CLIENT01 exists but not running - starting...'
+    Start-VM -Name $Config.Client.Name -ErrorAction SilentlyContinue
+    Start-Sleep -Seconds 30
+} else {
+    Write-Status 'CLIENT01 already deployed and running' -Level SKIP
+}
+
+if ($needsDeploy) {
+    try {
+        Install-Lab -NoValidation
+    } catch {
+        $runningClient = Get-VM -Name $Config.Client.Name -ErrorAction SilentlyContinue | Where-Object State -eq 'Running'
+        if ($runningClient) {
+            Write-Status "Install-Lab reported errors but CLIENT01 is running. Continuing." -Level WARN
+        } else {
+            Write-Status "CLIENT01 deployment failed: $($_.Exception.Message)" -Level FAIL
+        }
+    }
+    Write-Status "CLIENT01 deployed: $($Config.Client.IP)"
 }
 
 # ── 3.3 Expand CM01 OS disk ──────────────────────────────────────────────────

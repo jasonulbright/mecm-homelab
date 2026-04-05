@@ -1198,7 +1198,7 @@ Invoke-LabCommand -ComputerName $cmName -ActivityName 'Configure MECM Discovery 
 
 } -ArgumentList $siteCode, $netPrefix, "DC=$($Config.DomainName.Split('.')[0]),DC=$($Config.DomainName.Split('.')[1])", $netbios, $Config.ServiceAccounts.ClientPush.Name, $Config.ServiceAccounts.ClientPush.Password, $Config.ServiceAccounts.NAA.Name, $Config.ServiceAccounts.NAA.Password -ErrorAction Continue
 
-Write-Status 'MECM Discovery and Boundaries configured' -Level GOOD
+Write-Status 'MECM Discovery and Boundaries configured' -Level OK
 
 # ── Install WSUS + SUP with best practices ──
 Write-Host "`n--- Installing WSUS and Software Update Point ---" -ForegroundColor White
@@ -1243,7 +1243,7 @@ Invoke-LabCommand -ComputerName $cmName -ActivityName 'Configure WSUS Best Pract
     }
 } -ArgumentList $siteCode, "$cmName.$domainName" -ErrorAction Continue
 
-Write-Status 'WSUS and SUP installed with best practices' -Level GOOD
+Write-Status 'WSUS and SUP installed with best practices' -Level OK
 
 # Step 3: Configure SUP products, classifications, and sync schedule
 Invoke-LabCommand -ComputerName $cmName -ActivityName 'Configure SUP Products and Classifications' -ScriptBlock {
@@ -1306,7 +1306,7 @@ Invoke-LabCommand -ComputerName $cmName -ActivityName 'Configure SUP Products an
 
 } -ArgumentList $siteCode -ErrorAction Continue
 
-Write-Status 'SUP products and classifications configured' -Level GOOD
+Write-Status 'SUP products and classifications configured' -Level OK
 
 # ── Create test collection with maintenance window ──
 Write-Host "`n--- Creating Test Deployment Collection ---" -ForegroundColor White
@@ -1376,7 +1376,7 @@ Invoke-LabCommand -ComputerName $cmName -ActivityName 'Create Test Collection wi
 
 } -ArgumentList $siteCode, 'CLIENT01' -ErrorAction Continue
 
-Write-Status 'Test deployment collection with maintenance window created' -Level GOOD
+Write-Status 'Test deployment collection with maintenance window created' -Level OK
 
 # ── Set CCMCache to 40 GB ──
 Write-Host "`n--- Configuring Client Cache Size ---" -ForegroundColor White
@@ -1393,7 +1393,7 @@ Invoke-LabCommand -ComputerName $cmName -ActivityName 'Set CCMCache to 40 GB' -S
 
 } -ArgumentList $siteCode -ErrorAction Continue
 
-Write-Status 'Client cache size configured (40 GB)' -Level GOOD
+Write-Status 'Client cache size configured (40 GB)' -Level OK
 
 Write-Host ''
 Write-Host '  =============================================' -ForegroundColor Yellow

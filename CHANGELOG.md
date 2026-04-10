@@ -1,5 +1,16 @@
 # Changelog
 
+## [2.3.0] - 2026-04-10
+
+### Added
+- **CLIENT01 OS disk expansion** -- configurable `OSDiskSize` in config.psd1 (default 150GB). Expands VHDX and extends C: partition inside the VM. Matches the existing CM01 disk expansion pattern.
+- **CLIENT01 re-add on rerun** -- when CLIENT01 is missing from the AutomatedLab definition (partial rerun), the script re-adds it with correct NIC config instead of skipping with a warning.
+
+### Changed
+- **Pester test updated** -- `OSDiskSize` added to required Client VM properties.
+
+---
+
 ## [2.2.1] - 2026-03-31
 
 ### Changed

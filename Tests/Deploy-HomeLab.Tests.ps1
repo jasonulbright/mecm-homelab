@@ -44,7 +44,7 @@ Describe 'config.psd1 structure' {
     }
 
     It 'Client has required VM properties' {
-        foreach ($prop in @('Name', 'IP', 'Memory', 'MinMemory', 'MaxMemory', 'Processors')) {
+        foreach ($prop in @('Name', 'IP', 'Memory', 'MinMemory', 'MaxMemory', 'Processors', 'OSDiskSize')) {
             $config.Client.ContainsKey($prop) | Should -BeTrue -Because "Client must have '$prop'"
         }
     }

@@ -638,7 +638,21 @@ $clientHyperV = Get-VM -Name $Config.Client.Name -ErrorAction SilentlyContinue
 
 $needsDeploy = $false
 if (-not $clientVM) {
-    Write-Status 'CLIENT01 not in lab definition - skipping' -Level WARN
+    Write-Host '  CLIENT01 not in lab definition - re-adding...'
+    $clientNics = @(
+        New-LabNetworkAdapterDefinition -VirtualSwitch $networkName -Ipv4Address "$($Config.Client.IP)/24" -Ipv4DNSServers $Config.DC.IP
+        New-LabNetworkAdapterDefinition -VirtualSwitch 'Default Switch' -UseDhcp
+    )
+    Add-LabMachineDefinition -Name $Config.Client.Name `
+        -Memory $Config.Client.Memory `
+        -MinMemory $Config.Client.MinMemory `
+        -MaxMemory $Config.Client.MaxMemory `
+        -Processors $Config.Client.Processors `
+        -NetworkAdapter $clientNics `
+        -DomainName $domainName `
+        -OperatingSystem $clientOS
+    $needsDeploy = $true
+    Write-Status "CLIENT01 re-added to lab definition"
 } elseif (-not $clientHyperV) {
     Write-Host '  CLIENT01 VM missing - forcing redeployment...'
     $clientVM.SkipDeployment = $false
@@ -666,6 +680,33 @@ if ($needsDeploy) {
         }
     }
     Write-Status "CLIENT01 deployed: $($Config.Client.IP)"
+}
+
+# ── 3.3a Expand CLIENT01 OS disk ─────────────────────────────────────────────
+
+if ($Config.Client.OSDiskSize) {
+    Write-Host "`n--- Expanding CLIENT01 OS Disk ---" -ForegroundColor White
+    $clientHV = Get-VM -Name $Config.Client.Name -ErrorAction SilentlyContinue
+    if ($clientHV) {
+        $clientOsDisk = $clientHV | Get-VMHardDiskDrive | Where-Object { $_.ControllerLocation -eq 0 } | Select-Object -First 1
+        if ($clientOsDisk) {
+            $clientSizeGB = [math]::Round((Get-VHD $clientOsDisk.Path).Size / 1GB, 0)
+            if ($clientSizeGB -lt $Config.Client.OSDiskSize) {
+                Resize-VHD -Path $clientOsDisk.Path -SizeBytes ($Config.Client.OSDiskSize * 1GB)
+                Write-Status "VHDX expanded to $($Config.Client.OSDiskSize)GB"
+
+                Invoke-LabCommand -ComputerName $Config.Client.Name -ActivityName 'Extend C: partition on CLIENT01' -ScriptBlock {
+                    $maxSize = (Get-PartitionSupportedSize -DriveLetter C).SizeMax
+                    Resize-Partition -DriveLetter C -Size $maxSize
+                }
+                Write-Status 'C: partition extended inside CLIENT01'
+            } else {
+                Write-Status "CLIENT01 OS disk already ${clientSizeGB}GB (>= $($Config.Client.OSDiskSize)GB)" -Level SKIP
+            }
+        }
+    } else {
+        Write-Status 'CLIENT01 VM not found - cannot expand disk' -Level FAIL
+    }
 }
 
 # ── 3.3 Expand CM01 OS disk ──────────────────────────────────────────────────

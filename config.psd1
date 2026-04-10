@@ -50,6 +50,7 @@
         MinMemory  = 2GB
         MaxMemory  = 4GB
         Processors = 2
+        OSDiskSize = 150  # GB - must be large enough for 117 app install/uninstall cycles
         AutoStartDelay = 180  # Wait for DC+CM to be ready
     }
 
